@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+* {
+    box-sizing: border-box;
+    touch-action: pan-x pan-y;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+}
+
+:root {
+    /* motion tokens (DESIGN.md §5) */
+    --dur-fast: 120ms;
+    --dur-med: 240ms;
+    --dur-ping: 480ms;
+    --dur-blink: 1200ms;
+    /* font stacks (DESIGN.md §3.1, zero webfonts) */
+    --font-default-sans: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    --font-default-serif: serif;
+    --font-default-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas,
+        "Liberation Mono", monospace;
+}
+
+@theme {
+    /* color tokens (DESIGN.md §2) */
+    --color-void: #06080C;
+    --color-panel: #0C1118;
+    --color-raised: #131A28;
+    --color-subtle: #1D2A3A;
+    --color-strong: #2E4155;
+    --color-ink: #DCE6F2;
+    --color-dim: #8CA0B8;
+    --color-faint: #55677E;
+    --color-contact: #4FC8E0;
+    --color-self: #F2A93B;
+    --color-resource: #5FB77F;
+    --color-lethal: #E8503F;
+    --color-domain: #8F84CC;
+    --color-flash: #FFFFFF;
+    /* shape (DESIGN.md §4) */
+    --radius-panel: 2px;
+}
+
+@theme inline {
+    --font-sans: var(--font-default-sans);
+    --font-serif: var(--font-default-serif);
+    --font-mono: var(--font-default-mono);
+}
+
+body {
+    font-family: var(--font-default-mono);
+}
+
+::selection {
+    background: var(--color-strong);
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-self);
+    outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- keyframes
+   Only CSS animation exists in this design (DESIGN.md §5): every animation is
+   triggered by toggling a class from JS — never driven per-frame by JS. */
+
+@keyframes ping {
+    from {
+        opacity: 0.8;
+        scale: 0.5;
+    }
+
+    to {
+        opacity: 0;
+        scale: 2.2;
+    }
+}
+
+@keyframes alert-blink {
+    0%,
+    49% {
+        opacity: 1;
+    }
+
+    50%,
+    100% {
+        opacity: 0.35;
+    }
+}
+
+@keyframes log-in {
+    from {
+        opacity: 0;
+        translate: 0 2px;
+    }
+
+    to {
+        opacity: 1;
+        translate: 0 0;
+    }
+}
+
+@keyframes seal {
+    from {
+        scale: 0.6;
+    }
+
+    to {
+        scale: 1;
+    }
+}
+
+@keyframes countdown {
+    from {
+        inline-size: 100%;
+    }
+
+    to {
+        inline-size: 0%;
+    }
+}
+
+.anim-ping {
+    animation: ping var(--dur-ping) linear forwards;
+}
+
+.anim-alert-blink {
+    animation: alert-blink var(--dur-blink) steps(1) infinite;
+}
+
+.anim-log-in {
+    animation: log-in var(--dur-fast) ease-out;
+}
+
+.anim-seal {
+    animation: seal var(--dur-med) ease-out;
+}
+
+/* online-only: invasion counter window = remaining tick time (DESIGN.md §13) */
+.anim-countdown {
+    animation: countdown var(--dur-counter, 20s) linear forwards;
+}
+
+/* --------------------------------------------------------------- effects
+   The single allowed glow in the whole design: the invasion alarm light
+   (DESIGN.md §4). Everything else elevates via border brightness only. */
+
+.glow-lethal {
+    box-shadow: 0 0 24px color-mix(in srgb, var(--color-lethal) 25%, transparent);
+}
+
+/* static stardust for the star chart — never twinkles: on this screen, the
+   only things that move are messages (DESIGN.md §1.5) */
+.starfield {
+    background-image:
+        radial-gradient(circle 1px at 12% 22%, color-mix(in srgb, var(--color-ink) 5%, transparent), transparent),
+        radial-gradient(circle 1px at 78% 9%, color-mix(in srgb, var(--color-ink) 4%, transparent), transparent),
+        radial-gradient(circle 1px at 33% 76%, color-mix(in srgb, var(--color-ink) 5%, transparent), transparent),
+        radial-gradient(circle 1px at 91% 54%, color-mix(in srgb, var(--color-ink) 4%, transparent), transparent),
+        radial-gradient(circle 1px at 55% 41%, color-mix(in srgb, var(--color-ink) 3%, transparent), transparent),
+        radial-gradient(circle 1px at 8% 88%, color-mix(in srgb, var(--color-ink) 4%, transparent), transparent),
+        radial-gradient(circle 1px at 64% 83%, color-mix(in srgb, var(--color-ink) 3%, transparent), transparent),
+        radial-gradient(circle 1px at 21% 48%, color-mix(in srgb, var(--color-ink) 3%, transparent), transparent);
+}
+
+/* quiet scrollbars for the event log */
+.scroll-quiet {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-strong) var(--color-panel);
+}
+
+.scroll-quiet::-webkit-scrollbar {
+    inline-size: 8px;
+}
+
+.scroll-quiet::-webkit-scrollbar-thumb {
+    background: var(--color-strong);
+}
+
+.scroll-quiet::-webkit-scrollbar-track {
+    background: var(--color-panel);
+}
+
+/* numerals are always tabular — the console reads in columns */
+.tnum {
+    font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ popovers
+   Native Popover API ("auto" state); @oddbird/popover-polyfill 0.7.2 (imported
+   once in client-layout.tsx) backfills older browsers, including the auto
+   rule that only one popover may be open document-wide.
+
+   Anchoring (overflow prevention, all in CSS):
+   - baseline — wrapper-relative absolute below the card, works everywhere;
+     the top layer already escapes ancestor clipping while shown.
+   - browsers with CSS anchor positioning switch to fixed + position-area
+     with position-try-fallbacks, flipping the panel on overflow.
+   - on top of both, opponent-card injects a `translate` on open whenever
+     the rendered panel still leaks past the viewport (belt and braces). */
+
+.opp-popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: max-content;
+    max-width: min(20rem, calc(100vw - 1rem));
+    margin: 0;
+}
+
+@supports (anchor-name: --a) and (position-area: block-end) {
+    .opp-popover {
+        position: fixed;
+        inset: auto;
+        margin: 4px;
+        position-area: block-end span-inline-start;
+        position-try-fallbacks: flip-block, flip-inline;
+    }
+}
+
+/* marker detail popovers: markers live inside the chart's overflow-hidden
+   container, so CSS wrapper-relative anchoring would clip; coordinates are
+   set by placeFixedPopover (fixed, clamped into the viewport, flip above
+   when tight below) on every open. */
+.marker-popover {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    width: max-content;
+    max-width: min(16rem, calc(100vw - 1rem));
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition-duration: 0.01ms !important;
+    }
+}

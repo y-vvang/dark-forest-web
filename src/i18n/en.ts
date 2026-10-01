@@ -1,0 +1,161 @@
+/**
+ * English dictionary — the single source of truth for every UI string.
+ *
+ * New UI text must be added to the bilingual vocabulary table in DESIGN.md §7
+ * FIRST, then here (DESIGN.md §12). Keys are flat and grouped by screen:
+ * nav. home. solo. match. actions. log. modal. end. online. legend. opp. aria.
+ *
+ * `zh.ts` implements `Dict` — a missing key there is a compile error, and at
+ * runtime the resolver falls back to this file (default locale: en).
+ */
+export const en = {
+    "site.name": "DARK FOREST",
+    "nav.back": "Back",
+    "nav.home": "Home",
+
+    "home.title": "DARK FOREST",
+    "home.titleAlt": "黑暗森林",
+    "home.tagline":
+        "You are a civilization, born as another is born. Your only goal: survive to tick 250.",
+    "home.rules.title": "Rules at a glance",
+    "home.rules.axioms":
+        "The universe holds a fixed amount of matter (150), conserved every tick. Survival is a civilization's first need.",
+    "home.rules.actions":
+        "Nine actions. Tech gates unlock Observe, Black Domain and Strike. Staying Silent shrinks your detection cross-section.",
+    "home.rules.economy":
+        "Run out of resources and you starve. Invasion is a guaranteed kill that loots half. A shield blocks strikes from anyone below half your tech.",
+    "home.mode.solo": "Play vs AI",
+    "home.mode.solo.desc": "Face trained models or preset strategies from the original experiment.",
+    "home.mode.online": "Queue into the shared world",
+    "home.mode.online.desc": "No account needed. All online players queue into one world.",
+    "home.footer": "A faithful port of the dark-forest multi-agent RL experiment (v2.3-fix).",
+
+    "legend.self": "You",
+    "legend.self.desc": "Your civilization and its detection radius",
+    "legend.known": "Known",
+    "legend.known.desc": "Existence and position detected",
+    "legend.observed": "Observed",
+    "legend.observed.desc": "Exact tech and resource intel",
+    "legend.public": "Public",
+    "legend.public.desc": "Coordinates broadcast to everyone",
+    "legend.domain": "Black Domain",
+    "legend.domain.desc": "Sealed: undetectable, unstrikeable",
+    "legend.dead": "The dead vanish from the chart and remain only in the log.",
+
+    "solo.title": "Choose your opponents",
+    "solo.preset": "Preset strategies",
+    "solo.models": "Trained models",
+    "solo.selected": "{n} selected",
+    "solo.pool": "Pool",
+    "solo.pool.desc": "36 slots. You take one seat; the rest fill with your chosen opponents.",
+    "solo.start": "Start match",
+    "solo.disclosure":
+        "Survival figures are a relative measure (2 worlds × 40 episodes, single training seed) — indicative only.",
+    "solo.model.main": "The authoritative model — 600-episode self-play.",
+    "solo.model.control": "No-override control.",
+    "solo.model.survivalFmt": "relative survival {v}",
+
+    "opp.learner.name": "Tech Racer",
+    "opp.learner.desc":
+        "Zero strikes across 600 training episodes; teeth only for invasion — the only looter in the pool.",
+    "opp.random.name": "Random",
+    "opp.random.desc": "Picks uniformly among legal actions every tick.",
+    "opp.df.name": "Textbook Dark Forest",
+    "opp.df.desc":
+        "Strikes whenever legal, always at the strongest known civ — 15.7 kills per episode, zero loot.",
+    "opp.pacifist.name": "Pacifist",
+    "opp.pacifist.desc": "Only develops or stays silent; never attacks.",
+
+    "match.tick": "Tick",
+    "match.alive": "Alive",
+    "match.pool": "Free pool",
+    "match.self": "Your civilization",
+    "match.tech": "Tech",
+    "match.res": "Resources",
+    "match.domainNote": "Black domain active · irreversible",
+    "match.actions": "Actions",
+    "match.log": "Event log",
+    "match.log.empty": "No known civilizations — stay silent and wait for signals.",
+    "match.demo": "Demo",
+    "match.demo.normal": "Normal",
+    "match.demo.weak": "Weak start",
+    "match.demo.invade": "Invasion alert",
+    "match.demo.dead": "End · dead",
+    "match.demo.alive": "End · survived",
+    "match.target": "Select target — click a civilization on the chart",
+    "match.target.cancel": "Cancel",
+
+    "actions.silent": "Silent",
+    "actions.silent.sub": "Detection cross-section ×0.25",
+    "actions.develop": "Develop",
+    "actions.develop.sub": "Tech +0.05 per tick",
+    "actions.broadcast": "Broadcast",
+    "actions.broadcast.sub": "Reveals your coordinates to all next tick",
+    "actions.observe": "Observe",
+    "actions.observe.sub": "Intel on nearest known; a random civ detects you next tick",
+    "actions.domain": "Black Domain",
+    "actions.domain.sub": "Irreversible sanctuary; growth ×0.2, explosion ×0.1",
+    "actions.strike": "Strike",
+    "actions.strike.sub": "Explicit target, or nearest known",
+    "actions.strikeWeak": "Strike weakest",
+    "actions.strikeWeak.sub": "Hit the lowest-tech known civ",
+    "actions.strikeStrong": "Strike strongest",
+    "actions.strikeStrong.sub": "Hit the highest-tech known civ",
+    "actions.invade": "Invade",
+    "actions.invade.sub": "Guaranteed kill, loot half; target can counter",
+    "actions.disabled.tech": "Tech too low (need >{v})",
+    "actions.disabled.broadcast": "Need tech >1 or resources >10",
+    "actions.disabled.noKnown": "No known civilizations",
+    "actions.repeat": "Repeat last action",
+
+    "log.contact": "Unknown signal detected ({x},{y})",
+    "log.observed": "Observed: #{id} tech {tech} · res {res}",
+    "log.broadcast": "#{id} broadcast its coordinates",
+    "log.invaded": "#{id} is invading you — counter window open",
+    "log.blocked": "Strike blocked by shield (#{id} lost {take} res)",
+    "log.born": "Born: civ #{id} (res {res})",
+    "log.death": "You are dead. Cause: {cause}. Survived {ticks} ticks.",
+
+    "cause.starve": "starvation",
+    "cause.strike": "strike",
+    "cause.invade": "invasion",
+    "cause.mutual": "mutual destruction",
+
+    "modal.title": "INVASION ALERT",
+    "modal.body": "#{id} is invading you · counter window",
+    "modal.counter": "Counter-invade",
+    "modal.counter.sub": "Mutual destruction — you both die",
+    "modal.domain": "Declare Black Domain",
+    "modal.domain.sub": "Cancels the invasion now; irreversible",
+    "modal.cancel": "Cancel",
+
+    "end.dead.title": "You are dead",
+    "end.dead.cause": "Cause: {cause}",
+    "end.dead.survived": "Survived {ticks} ticks",
+    "end.stats": "Kills {kills} · Loot {loot}",
+    "end.alive.title": "You survived to the end",
+    "end.alive.body": "250 ticks · {n} civilizations alive at the end",
+    "end.again": "Play again",
+    "end.home": "Return home",
+
+    "online.title": "Online queue",
+    "online.position": "Queue position #{n}",
+    "online.noAccount": "No account needed · queue to enter",
+    "online.world": "World readout",
+    "online.note": "The pool births a civilization as soon as it can afford one — you take the next birth.",
+    "online.cancel": "Leave queue",
+    "online.ghost": "Queued (not yet born)",
+    "online.waiting": "Waiting",
+
+    "aria.civ": "Civ #{id} · {state} · tech {tech} · res {res}",
+    "aria.civ.plain": "Civ #{id} · {state}",
+
+    "label.civ": "#{id} tech {tech} · res {res}",
+    "label.sealed": "sealed",
+
+    "popover.noIntel": "No exact intel",
+} as const;
+
+export type MessageKey = keyof typeof en;
+export type Dict = Record<MessageKey, string>;
+export type TParams = Record<string, string | number>;
