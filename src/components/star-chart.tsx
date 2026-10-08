@@ -1,6 +1,6 @@
-import type { MockCiv } from "@/lib/mock";
 
-import { Marker } from "./marker";
+
+import { Marker, type CivLike } from "./marker";
 
 /**
  * The world chart (DESIGN.md §10.6): DOM-rendered, never <canvas>.
@@ -18,12 +18,12 @@ export function StarChart({
     onPick,
     className = "",
 }: {
-    civs: MockCiv[];
+    civs: CivLike[];
     /** civs that may be locked as an explicit strike/invade target */
     selectableIds?: number[];
     /** civs playing the new-contact ping this render */
     pingIds?: number[];
-    onPick?: (civ: MockCiv) => void;
+    onPick?: (civ: CivLike) => void;
     className?: string;
 }) {
     const self = civs.find((civ) => civ.state === "self");

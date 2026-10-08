@@ -74,7 +74,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   与入侵（风窗期只剩"可被探测"）；
   ② `env2.py:70` 注释"obs=36"已过时，实际 7+10+21=**38**；
   ③ `config_v23.yaml` 的 `develop_reward: 0.05` 未被 `resolve()` 使用（奖励走 `softsign_reward_scale`）；
-  ④ `scripts/pipeline_v23_fix.sh` 注释"12 arms"实为 11 臂，且内含原沙箱硬编码路径（本机不可运行）。
+  ④ `scripts/pipeline_v23_fix.sh` 注释"12 arms"实为 11 臂，且内含原沙箱硬编码路径（本机不可运行）；
+  ⑤ **近邻观测块**（2026-10-01 金标准回放发现）：布局是 **feature-major**——
+  `np.concatenate(axis=-1)`（env2.py:320-328）拼各 (n,3) 列组 → `[Δx×3, Δy×3, d×3, tech×3,
+  res×3, public×3, in_domain×3]`，而非"逐邻居 7 元组"；且 `big` 矩阵（env2.py:310）**不滤域内
+  目标**——已知+存活的域内文明以真实 Δx/Δy/d 进入观测，仅 tech/res/public/in_domain 情报
+  特征被 known_pair 掩蔽（in_domain 特征恒 0）。env-model-v23.md 的"3 个最近已知存活非域
+  文明×7"描述不精；同文件 obs 布局以 `src/lib/engine/env.ts` obs() 与金标准轨迹为准。
 - 参数来源：`softsign_a=0.2` 为用户指定且**至今未做敏感性扫描**的继承常数；`shield_cost_frac=0.5`
   用户指定但已在 sweep 中扫描（0.25/0.5/0.75 学习者存活 0.775/0.669/0.613，单调）。游戏如需改动
   任何环境参数，必须在设计文档中明示"这是对实验的偏离"。
@@ -164,10 +170,17 @@ OMP_NUM_THREADS=1 PYTHONUTF8=1 python3 train2.py --seed 42 --mode main --out ../
 OMP_NUM_THREADS=1 PYTHONUTF8=1 python3 stage_b.py --run-dir ../runs/v23_fix/seed42_main --episodes 150 --out ../results/v23_fix --config config_v23.yaml
 # ⚠️ scripts/pipeline_v23_fix.sh 内含原沙箱硬编码绝对路径（/home/z/...），本机不可直接运行，仅作历史脚本
 
-# 游戏（仓库根，bun；已验证 2026-09-30）
+# 游戏（仓库根，bun；已验证 2026-10-02）
 bun run dev        # 开发服务器
 bun run build      # 生产构建（4 路由静态预渲染）
 bun run check      # typegen + eslint + tsc --noEmit（zh 词典完整性由 tsc 编译保证）
+bun test           # 全部测试（引擎一致性门 + 对手奇偶 + 会话/感知/门 parity；~600ms）
+
+# 金标准与模型资产的再生成（开发期 Python，只读引用 experiment/）
+PYTHONUTF8=1 python3 scripts/golden/record_golden.py        # 6 轨迹 + stats.json → src/lib/engine/testdata/
+python3 scripts/golden/convert_models.py                   # 12 npz → public/models/*.json（immutable 长缓存）
+python3 scripts/golden/record_dqn_outputs.py               # 12 模型前向奇偶数据 → testdata/dqn-outputs.json
+# 口径与容差披露见 src/lib/engine/testdata/README.md（含已捕获的 3 处移植缺陷历史记录）
 ```
 
 ## 一致性验收（游戏环境 ⇄ 实验环境）
@@ -191,6 +204,7 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 |---|---|
 | `docs/env-model-v23.md` | v2.3-fix 环境完整移植规格（参数/状态/出生/动作/公式/结算顺序/观测/事件流/RNG 策略/回归锁定） |
 | `docs/ai-opponents.md` | DQN 推理移植 + 预制策略精确规则 + 12 个 checkpoint 清单与口径 |
+| `docs/game-mechanics.md` | **游戏机制阶段设计**（2026-10-01，v1.0）：模块架构（engine/opponents/solo 分层）、Rng 接口（uniform/choice）+ 录制-回放金标准、5 点验收门的测试落地、模型预转换 JSON 管线、单机会话层（座位分配/玩家出生/逐刻循环）、**玩家感知过滤规则表**（严格忠实口径）、里程碑 M1-M5。做引擎/对手/会话任何工作前先读它 |
 | `DESIGN.md`（v0.2 已建） | UI 设计系统：方向/原则/令牌（v0.1）+ 双语词汇表 §7 + 组件规格 §10 + 五屏线框 §11 + i18n 规范 §12（无手动语言开关）+ 时序模型 §13（单机每刻暂停 / 在线定时刻长）。**写任何 HTML 前须先经它** |
 | `experiment/README.md`、`experiment/INDEX.md` | 实验总览与目录地图 |
 | `experiment/docs/experiment_report.md` | 实验总报告（第六部分 = 权威结论） |
@@ -198,14 +212,37 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 
 ## 开发顺序（项目路线）
 
-1. 环境移植 + 一致性验收（上节 1-5）→ 2. `DESIGN.md`（**v0.2 已完成 2026-09-30**，含 §13
-   时序模型：单机每刻暂停回合制 / 在线 20s 定时刻、未提交默认静默）→ 3. HTML 原型
-   （**已完成 2026-09-30**：`/` `/solo` `/match` `/online` 五屏静态 mock + 双语 i18n，
-   `bun run check` + `build` 全绿）→ 4. 对手接入（DQN 推理 + 预制策略，模式 a）→
-5. 在线模式（排队/共享世界/轮询或 SSE，模式 b）→ 6. Vercel 部署与缓存策略。
+1. 环境移植 + 一致性验收（**已完成 2026-10-02**：TS 引擎 `src/lib/engine/`，验收门 1-5 全绿——
+   strike-fix 10 种子等价、守恒全程、**录制-回放金标准 6 轨迹逐刻精确比对**、info 逐字段、
+   Q1-Q12 锁定 + 统计第二口径；口径披露 `src/lib/engine/testdata/README.md`）→
+2. `DESIGN.md`（**v0.2 已完成 2026-09-30**，含 §13 时序模型：单机每刻暂停回合制 /
+   在线 20s 定时刻、未提交默认静默）→ 3. HTML 原型（**已完成 2026-09-30**：五屏静态 mock +
+   双语 i18n）→ 4. 对手接入（**已完成 2026-10-02**：DQN 推理 12 模型前向奇偶 |ΔQ|≤1e-9 +
+   预制策略 stage_b 口径 + 单机会话层与感知过滤，`/solo`→`/match` 端到端可玩，demo bar 已移除）→
+5. 在线模式（排队/共享世界/轮询或 SSE，模式 b；`/online` 仍为 mock 大厅）→
+6. Vercel 部署与缓存策略（`/models/*` immutable 头已就位）。
 每阶段完成后更新 CLAUDE.md 的命令与状态。
 
-落地备忘（2026-09-30 原型阶段；2026-10-01 更新）：
+落地备忘（2026-09-30 原型阶段；2026-10-02 机制阶段更新）：
+
+- **游戏机制分层**（docs/game-mechanics.md §1）：`src/lib/engine/`（纯 TS 环境，零 React）→
+  `src/lib/opponents/`（dqn.ts 前向+actBatch / presets.ts / catalog.ts）→ `src/lib/solo/`
+  （match.ts 会话状态机 + view.ts 感知过滤 + gates.ts 门理由 + client.ts 装配）。
+  **Rng 为构造期注入**（env 不持有种子）：GameRng=运行时 sfc32、ScriptedRng=单测脚本值
+  （原样返回，非缩放）、ReplayRng=金标准回放。种子派生 `seedOf(S, domain)`（splitmix64）：
+  domain ∈ "env" / "session"（预制共享流，stage_b 口径）/ "model:" + arm。
+  座位约定：初始 4 席 = 对手光标 0..3；**首个内生出生 = 玩家**（出生序 4）；此后继续光标循环。
+- **UI 只可消费 view.ts 视图模型**（MatchView）：感知过滤（严格忠实口径，规则表 game-mechanics.md
+  §7——他人间交锋/被观测反曝光/被打击幸存均不渲染）在 ViewTracker 内完成，**组件层禁止直读
+  env/SoloMatch**。ViewTracker 契约：每刻至少一次 update()。日志 `params.cause` 携带 cause.* 键名，
+  由 EventLog 嵌套翻译。
+- **模型资产**：`public/models/<arm>.json`（12 个，npz 预转换，Python float repr↔JSON.parse 逐位
+  往返），next.config 已挂 `Cache-Control: public, max-age=31536000, immutable`。运行时按需 fetch。
+  `/match?op=<逗号分隔 id>`（preset+model），非法参数/加载失败 → replace /solo。
+- useSearchParams 必须包 Suspense 外壳（Next 16 预渲染；/match 的 MatchConsole 模式）。
+- 组件层标记类型 = **CivLike**（marker.tsx 定义）：MockCiv 已退役，mock.ts 只剩 /online 大厅
+  与 legend-hero 标本。
+- 原型演示控制条（/match demo bar）**已移除**（2026-10-02，真实环境接线时）。
 
 - **架构**：`layout.tsx`（server，持有 en metadata）→ `src/components/client-layout.tsx`
   （**唯一的应用级 `"use client"` 入口**：I18nProvider + 全局 side-effect 引入——当前为
@@ -220,5 +257,3 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
   `translate` 钳制（`clampPopoverIntoViewport`）；marker = 星图 `overflow-hidden` 容器内，
   改用固定坐标 JS 摆放（`placeFixedPopover`：锚点下方、下方不足上翻、横向钳入视口）。
   **星图常驻数据标签已按此移除**（2026-10-01）：状态速读保留在形/色层，数字入浮层。
-- 原型演示控制条（`/match` 的 demo bar：常规/弱小开局/入侵警报/终局×2）仅原型期存在，
-  接入真实环境后移除。

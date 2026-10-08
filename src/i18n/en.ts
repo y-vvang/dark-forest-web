@@ -51,13 +51,11 @@ export const en = {
     "solo.start": "Start match",
     "solo.disclosure":
         "Survival figures are a relative measure (2 worlds × 40 episodes, single training seed) — indicative only.",
+    "solo.loading": "Loading opponent models…",
     "solo.model.main": "The authoritative model — 600-episode self-play.",
     "solo.model.control": "No-override control.",
     "solo.model.survivalFmt": "relative survival {v}",
 
-    "opp.learner.name": "Tech Racer",
-    "opp.learner.desc":
-        "Zero strikes across 600 training episodes; teeth only for invasion — the only looter in the pool.",
     "opp.random.name": "Random",
     "opp.random.desc": "Picks uniformly among legal actions every tick.",
     "opp.df.name": "Textbook Dark Forest",
@@ -76,14 +74,11 @@ export const en = {
     "match.actions": "Actions",
     "match.log": "Event log",
     "match.log.empty": "No known civilizations — stay silent and wait for signals.",
-    "match.demo": "Demo",
-    "match.demo.normal": "Normal",
-    "match.demo.weak": "Weak start",
-    "match.demo.invade": "Invasion alert",
-    "match.demo.dead": "End · dead",
-    "match.demo.alive": "End · survived",
     "match.target": "Select target — click a civilization on the chart",
     "match.target.cancel": "Cancel",
+    "match.target.skip": "Skip targeting — strike nearest known",
+    "match.birthSelf": "Your civilization is born",
+    "match.waitBirth": "Waiting to be born — the world runs on",
 
     "actions.silent": "Silent",
     "actions.silent.sub": "Detection cross-section ×0.25",
@@ -106,14 +101,18 @@ export const en = {
     "actions.disabled.tech": "Tech too low (need >{v})",
     "actions.disabled.broadcast": "Need tech >1 or resources >10",
     "actions.disabled.noKnown": "No known civilizations",
-    "actions.repeat": "Repeat last action",
 
     "log.contact": "Unknown signal detected ({x},{y})",
     "log.observed": "Observed: #{id} tech {tech} · res {res}",
     "log.broadcast": "#{id} broadcast its coordinates",
     "log.invaded": "#{id} is invading you — counter window open",
-    "log.blocked": "Strike blocked by shield (#{id} lost {take} res)",
-    "log.born": "Born: civ #{id} (res {res})",
+    "log.ownStrikeBlocked": "Your strike was blocked by a shield (#{id} shed {take})",
+    "log.ownStrikeHit": "Your strike hit #{id}",
+    "log.ownStrikeMiss": "Your strike missed #{id}",
+    "log.ownInvade": "You invaded #{id}, looted {loot}",
+    "log.ownBroadcast": "You broadcast — public to all next tick",
+    "log.born": "A new civilization is born",
+    "log.dark": "A known contact went dark",
     "log.death": "You are dead. Cause: {cause}. Survived {ticks} ticks.",
 
     "cause.starve": "starvation",
@@ -135,6 +134,8 @@ export const en = {
     "end.stats": "Kills {kills} · Loot {loot}",
     "end.alive.title": "You survived to the end",
     "end.alive.body": "250 ticks · {n} civilizations alive at the end",
+    "end.unborn.title": "You were never born",
+    "end.unborn.body": "The world fell silent before your birth.",
     "end.again": "Play again",
     "end.home": "Return home",
 
@@ -150,7 +151,6 @@ export const en = {
     "aria.civ": "Civ #{id} · {state} · tech {tech} · res {res}",
     "aria.civ.plain": "Civ #{id} · {state}",
 
-    "label.civ": "#{id} tech {tech} · res {res}",
     "label.sealed": "sealed",
 
     "popover.noIntel": "No exact intel",

@@ -183,7 +183,8 @@
 随机文明发现` / `Observe: learn the nearest known civ's tech & res; a random civ detects you
 next tick`。
 
-**日志句式**（`[041]` + 陈述，双侧同构）：
+**日志句式**（`[041]` + 陈述，双侧同构；感知过滤口径见 docs/game-mechanics.md §7——
+仅渲染玩家可知事件：自有动作结果、环境显式通知、自身探测/知识图变化；他人间交锋不可见）：
 
 | 中文 | English |
 |---|---|
@@ -191,9 +192,22 @@ next tick`。
 | `[042] 观测成功：#7 科技 3.1 · 资源 8.4` | `[042] Observed: #7 tech 3.1 · res 8.4` |
 | `[044] #7 公开了自己的坐标` | `[044] #7 broadcast its coordinates` |
 | `[045] 你被 #7 入侵——反击窗口开启` | `[045] #7 is invading you — counter window open` |
-| `[046] 打击被护盾挡下（#9 耗散 5.2 资源）` | `[046] Strike blocked by shield (#9 lost 5.2 res)` |
-| `[047] 诞生：文明 #11（资源 9.8）` | `[047] Born: civ #11 (res 9.8)` |
+| `[046] 你的打击被护盾挡下（#9 耗散 5.2）` | `[046] Your strike was blocked by a shield (#9 shed 5.2)` |
+| `[047] 你的打击命中了 #9` | `[047] Your strike hit #9` |
+| `[048] 你的打击未命中 #9` | `[048] Your strike missed #9` |
+| `[049] 你入侵了 #9，缴获 5.2` | `[049] You invaded #9, looted 5.2` |
+| `[050] 你广播了坐标，下刻向全体公开` | `[050] You broadcast — public to all next tick` |
+| `[051] 一个新文明诞生了` | `[051] A new civilization is born` |
+| `[052] 已知信号消失` | `[052] A known contact went dark` |
+| `[053] 你的文明诞生了` | `[053] Your civilization is born` |
+| `[000] 等待出生——世界运行中` | `[000] Waiting to be born — the world runs on` |
 | `[112] 你死了。死因：饿死。存活 111 刻。` | `[112] You are dead. Cause: starvation. Survived 111 ticks.` |
+
+诞生事件**情报-free**（感知过滤规则⑩：出生不给 #id/资源）；护盾句仅当玩家为打击者（规则①；
+被打击而幸存无通知，规则⑨）。目标选择条补充：`不选目标，打击最近已知` /
+`Skip targeting — strike nearest known`。终局第三态：`你未及诞生` / `You were never born`、
+`世界在你出生前归于热寂。` / `The world fell silent before your birth.`。装载态：
+`正在装载对手模型…` / `Loading opponent models…`。
 
 **数字格式**（不本地化，mono 固定）：刻 `041/250`（三位补零）；概率 `62%`；科技/资源/池
 `1 位小数`；坐标整数。

@@ -1,7 +1,6 @@
 import { useI18n, type MessageKey } from "@/i18n";
-import type { MockCiv } from "@/lib/mock";
 
-import { Marker } from "./marker";
+import { Marker, type CivLike } from "./marker";
 import { Panel } from "./panel";
 
 /**
@@ -9,7 +8,7 @@ import { Panel } from "./panel";
  * rendered with the real marker components. It is the visual anchor of the
  * front page and doubles as the one lesson this game needs taught.
  */
-const CELLS: { civ: MockCiv; name: MessageKey; desc: MessageKey }[] = [
+const CELLS: { civ: CivLike; name: MessageKey; desc: MessageKey }[] = [
     {
         civ: { id: 0, x: 50, y: 50, state: "self", tech: 7.4, res: 12.5 },
         name: "legend.self",

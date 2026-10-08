@@ -4,12 +4,13 @@ import { Panel } from "@/components/panel";
 import { StarChart } from "@/components/star-chart";
 import { BackLink, TopBar } from "@/components/top-bar";
 import { useI18n } from "@/i18n";
-import { ONLINE, type MockCiv } from "@/lib/mock";
+import { ONLINE } from "@/lib/mock";
+import type { CivLike } from "@/components/marker";
 
 export default function OnlinePage() {
     const { t } = useI18n();
 
-    const ghostCivs: MockCiv[] = ONLINE.ghosts.map((ghost, index) => ({
+    const ghostCivs: CivLike[] = ONLINE.ghosts.map((ghost, index) => ({
         id: 100 + index,
         x: ghost.x,
         y: ghost.y,

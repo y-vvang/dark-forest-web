@@ -1,5 +1,5 @@
-import { GATES } from "@/lib/mock";
-import { useI18n, type MessageKey, type TParams } from "@/i18n";
+import { useI18n, type MessageKey } from "@/i18n";
+import { ACTION_NUM, gateOf, type ActionId } from "@/lib/solo/gates";
 
 import { Panel } from "./panel";
 
@@ -8,18 +8,10 @@ import { Panel } from "./panel";
  * intel·sanctuary·plunder, row 3 violence. Targeting actions arm a
  * target-selection mode instead of firing immediately; every disabled
  * button states its gate reason inline.
+ *
+ * Disabled = env's own valid row (`valid[a] === false`); the inline reason
+ * comes from gateOf (parity-locked against env in gates-parity.test).
  */
-export type ActionId =
-    | "silent"
-    | "develop"
-    | "broadcast"
-    | "observe"
-    | "domain"
-    | "invade"
-    | "strike"
-    | "strikeWeak"
-    | "strikeStrong";
-
 interface ActionDef {
     id: ActionId;
     name: MessageKey;
@@ -41,47 +33,11 @@ const ORDER: ActionDef[] = [
     { id: "strikeStrong", name: "actions.strikeStrong", sub: "actions.strikeStrong.sub" },
 ];
 
-type Block = { reason: MessageKey; params?: TParams } | null;
-
-/** env gates (config_v23.yaml) evaluated in the env's own order of checks */
-function gateOf(
-    id: ActionId,
-    tech: number,
-    res: number,
-    hasKnown: boolean,
-): Block {
-    switch (id) {
-        case "broadcast":
-            return tech > GATES.broadcastTech || res > GATES.broadcastRes
-                ? null
-                : { reason: "actions.disabled.broadcast" };
-        case "observe":
-            if (!hasKnown) return { reason: "actions.disabled.noKnown" };
-            return tech > GATES.observeTech
-                ? null
-                : { reason: "actions.disabled.tech", params: { v: GATES.observeTech } };
-        case "domain":
-            return tech > GATES.domainTech
-                ? null
-                : { reason: "actions.disabled.tech", params: { v: GATES.domainTech } };
-        case "strike":
-        case "strikeWeak":
-        case "strikeStrong":
-            if (!hasKnown) return { reason: "actions.disabled.noKnown" };
-            return tech > GATES.strikeTech
-                ? null
-                : { reason: "actions.disabled.tech", params: { v: GATES.strikeTech } };
-        case "invade":
-            return hasKnown ? null : { reason: "actions.disabled.noKnown" };
-        default:
-            return null;
-    }
-}
-
 export function ActionGrid({
     tech,
     res,
     hasKnown,
+    valid,
     lastAction,
     armed,
     onArm,
@@ -90,6 +46,8 @@ export function ActionGrid({
     tech: number;
     res: number;
     hasKnown: boolean;
+    /** env valid row (authoritative disable); reason text from gateOf */
+    valid: boolean[];
     /** last resolved action, highlighted amber */
     lastAction: ActionId | null;
     /** the armed targeting action, highlighted red */
@@ -103,14 +61,15 @@ export function ActionGrid({
         <Panel title={t("match.actions")}>
             <div className="grid grid-cols-3 gap-2">
                 {ORDER.map((def) => {
-                    const blocked = gateOf(def.id, tech, res, hasKnown);
+                    const reason = gateOf(def.id, tech, res, hasKnown);
+                    const blocked = !valid[ACTION_NUM[def.id]] || reason !== null;
                     const isArmed = armed === def.id;
                     const isLast = lastAction === def.id;
                     return (
                         <button
                             key={def.id}
                             type="button"
-                            disabled={blocked !== null}
+                            disabled={blocked}
                             onClick={() =>
                                 def.targets === true ? onArm(def.id) : onAction(def.id)
                             }
@@ -119,7 +78,7 @@ export function ActionGrid({
                                     ? "border-lethal bg-raised"
                                     : isLast
                                       ? "border-self"
-                                      : blocked !== null
+                                      : blocked
                                         ? "border-subtle opacity-40"
                                         : "border-subtle hover:border-strong hover:bg-raised"
                             }`}
@@ -136,8 +95,8 @@ export function ActionGrid({
                                 {t(def.name)}
                             </span>
                             <span className="text-xs text-dim">
-                                {blocked !== null
-                                    ? t(blocked.reason, blocked.params)
+                                {blocked && reason !== null
+                                    ? t(reason.reason, reason.params)
                                     : t(def.sub)}
                             </span>
                         </button>
@@ -147,3 +106,5 @@ export function ActionGrid({
         </Panel>
     );
 }
+
+export type { ActionId };

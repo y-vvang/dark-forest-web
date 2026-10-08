@@ -10,6 +10,8 @@ export function InvasionModal({
     invaderId,
     timed = false,
     remainingSeconds,
+    domainDisabled = false,
+    domainTitle,
     onCounter,
     onDomain,
     onCancel,
@@ -19,6 +21,10 @@ export function InvasionModal({
     timed?: boolean;
     /** drives --dur-counter for the CSS countdown animation */
     remainingSeconds?: number;
+    /** BD re-choice illegal (tech gate) → disable + show reason */
+    domainDisabled?: boolean;
+    /** gate reason line when disabled (i18n'd by caller) */
+    domainTitle?: string;
     onCounter: () => void;
     onDomain: () => void;
     onCancel: () => void;
@@ -60,11 +66,17 @@ export function InvasionModal({
                     <button
                         type="button"
                         onClick={onDomain}
-                        className="flex min-h-16 flex-col items-start justify-center rounded-panel border border-domain bg-panel px-3 py-2 text-left font-bold text-domain"
+                        disabled={domainDisabled}
+                        title={domainTitle ?? undefined}
+                        className={`flex min-h-16 flex-col items-start justify-center rounded-panel border px-3 py-2 text-left font-bold ${
+                            domainDisabled
+                                ? "border-subtle text-faint opacity-40"
+                                : "border-domain bg-panel text-domain"
+                        }`}
                     >
                         <span>{t("modal.domain")}</span>
                         <span className="text-xs font-normal text-dim">
-                            {t("modal.domain.sub")}
+                            {domainDisabled ? (domainTitle ?? "") : t("modal.domain.sub")}
                         </span>
                     </button>
                     <button

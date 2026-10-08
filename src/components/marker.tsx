@@ -1,7 +1,20 @@
-import type { MarkerState, MockCiv } from "@/lib/mock";
 import { useI18n, type MessageKey } from "@/i18n";
+import type { MarkerView } from "@/lib/solo/view";
 
 import { placeFixedPopover, useAutoPopover } from "./use-auto-popover";
+
+/** marker 的认知状态（视图模型；/online 的幽灵与 legend 复用同一形状） */
+export type MarkerState = MarkerView["state"];
+
+/** 兼容别名：组件只依赖形状，mock 与 view 均可喂入 */
+export type CivLike = {
+    id: number;
+    x: number;
+    y: number;
+    state: MarkerState;
+    tech?: number;
+    res?: number;
+};
 
 /** epistemic state → legend key (typed, no dynamic template keys) */
 const STATE_KEY = {
@@ -35,12 +48,12 @@ export function Marker({
     onPick,
     decorative = false,
 }: {
-    civ: MockCiv;
+    civ: CivLike;
     /** play the new-contact ping once (CSS keyframe) */
     ping?: boolean;
     /** target-selection mode: clicking picks this civ instead of pinning */
     selectable?: boolean;
-    onPick?: (civ: MockCiv) => void;
+    onPick?: (civ: CivLike) => void;
     /** legend/lobby specimens: not focusable, hidden from the a11y tree */
     decorative?: boolean;
 }) {

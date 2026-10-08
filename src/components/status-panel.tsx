@@ -1,5 +1,5 @@
-import { GATES } from "@/lib/mock";
 import { useI18n } from "@/i18n";
+import { V23_CONFIG } from "@/lib/engine/config";
 
 import { Panel } from "./panel";
 
@@ -31,14 +31,14 @@ export function StatusPanel({
                     value={tech.toFixed(1)}
                     pct={(Math.min(tech, 10) / 10) * 100}
                     bar="bg-self"
-                    gates={[GATES.observeTech, GATES.strikeTech]}
+                    gates={[V23_CONFIG.gateObserveTech, V23_CONFIG.gateStrikeTech]}
                     gateDomain={10}
                     gateValue={tech}
                 />
                 <Readout
                     label={t("match.res")}
                     value={res.toFixed(1)}
-                    pct={(Math.min(res, 20) / 20) * 100}
+                    pct={(Math.min(res, V23_CONFIG.resMax) / V23_CONFIG.resMax) * 100}
                     bar="bg-resource"
                 />
             </div>
