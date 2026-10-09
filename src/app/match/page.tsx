@@ -3,7 +3,11 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { ActionGrid, type ActionId } from "@/components/action-grid";
+import {
+    ActionGrid,
+    type ActionId,
+    type PendingAction,
+} from "@/components/action-grid";
 import { EndOverlay } from "@/components/end-overlay";
 import { EventLog } from "@/components/event-log";
 import { InvasionModal } from "@/components/invasion-modal";
@@ -11,7 +15,7 @@ import { StarChart } from "@/components/star-chart";
 import { StatusPanel } from "@/components/status-panel";
 import { BrandLink, TopBar } from "@/components/top-bar";
 import { useI18n } from "@/i18n";
-import { ACTION_NUM, type ActionId as GridActionId } from "@/lib/solo/gates";
+import { ACTION_NUM } from "@/lib/solo/gates";
 import type { MarkerView } from "@/lib/solo/view";
 import { useSoloMatch } from "@/lib/solo/client";
 
@@ -48,7 +52,11 @@ function MatchConsole() {
     const router = useRouter();
     const params = useSearchParams();
     const session = useSoloMatch(params.get("op"));
+    // 模型 B（用户确认 2026-10-09）：格只「选择」，执行按钮是唯一提交入口。
+    // 姿态（静默/发展）跨刻保留；一次性动作为 pending，刻后回退姿态。
     const [armed, setArmed] = useState<ActionId | null>(null);
+    const [stance, setStance] = useState<ActionId>("silent");
+    const [pending, setPending] = useState<PendingAction | null>(null);
 
     // ESC 退出目标选择（状态逻辑；动画仍是 CSS-only）
     useEffect(() => {
@@ -84,13 +92,36 @@ function MatchConsole() {
         );
     const targeting = armed === "strike" || armed === "invade";
 
+    const onSelect = (id: ActionId) => {
+        if (id === "silent" || id === "develop") {
+            setStance(id); // 姿态：持久保留
+            setPending(null);
+        } else if (pending?.id === id) {
+            setPending(null); // 再点同一动作 = 取消待执行，回退姿态
+        } else {
+            setPending({ id }); // 一次性动作：进入待执行
+        }
+    };
+
     const onPick = (civ: MarkerView) => {
         if (armed === null || civ.state === "self" || civ.state === "domain") return;
-        session.submitAction(ARMED_NUM[armed], civ.id);
+        setPending({ id: armed, target: civ.id }); // 选中目标即成 pending、退出武装
         setArmed(null);
     };
 
-    const submitSimple = (id: ActionId) => session.submitAction(ARMED_NUM[id], -1);
+    const onExecute = () => {
+        if (armed !== null) return; // 武装中：先选目标或取消
+        if (pending !== null) {
+            session.submitAction(ARMED_NUM[pending.id], pending.target ?? -1);
+            setPending(null); // 提交即清（单机同步结算下视觉即"刻后回退姿态"）
+        } else {
+            session.submitAction(ARMED_NUM[stance], -1); // 稳态：以姿态推进
+        }
+    };
+
+    const executeDisabled =
+        armed !== null || v.self === null || v.phase !== "awaiting-action";
+
     const tickStr = `${String(v.tick).padStart(3, "0")}/${v.tMax}`;
 
     return (
@@ -121,7 +152,7 @@ function MatchConsole() {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    session.submitAction(ARMED_NUM.strike, -1); // 最近已知兜底
+                                    setPending({ id: "strike", target: -1 }); // 最近已知兜底
                                     setArmed(null);
                                 }}
                                 className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
@@ -168,10 +199,13 @@ function MatchConsole() {
                         res={v.self?.res ?? 0}
                         hasKnown={hasKnown}
                         valid={v.valid}
-                        lastAction={v.lastAction !== null ? numToActionId(v.lastAction) : null}
+                        stance={stance}
+                        pending={pending}
                         armed={armed}
+                        onSelect={onSelect}
                         onArm={setArmed}
-                        onAction={submitSimple}
+                        onExecute={onExecute}
+                        executeDisabled={executeDisabled}
                     />
                 </div>
             </div>
@@ -194,19 +228,4 @@ function MatchConsole() {
             {v.end !== null && <EndOverlay end={v.end} />}
         </div>
     );
-}
-
-function numToActionId(n: number): GridActionId | null {
-    const map: Record<number, GridActionId> = {
-        0: "silent",
-        1: "develop",
-        2: "broadcast",
-        4: "strike",
-        5: "domain",
-        6: "invade",
-        7: "observe",
-        8: "strikeWeak",
-        9: "strikeStrong",
-    };
-    return map[n] ?? null;
 }

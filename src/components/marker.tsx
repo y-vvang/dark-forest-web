@@ -84,7 +84,7 @@ export function Marker({
         <span
             className={`relative block ${big ? "size-2" : "size-1.5"} ${
                 civ.state === "self"
-                    ? "rounded-full bg-self"
+                    ? "glow-self rounded-full bg-self"
                     : civ.state === "known"
                       ? "rounded-full border-2 border-contact/70 bg-transparent"
                       : civ.state === "observed"
@@ -96,10 +96,7 @@ export function Marker({
                             : "rounded-full border border-dashed border-faint bg-transparent"
             }`}
         >
-            {/* own-civ halo / broadcast white ring / domain dark core */}
-            {civ.state === "self" && (
-                <span className="absolute inset-[-3px] rounded-full border border-self/50" />
-            )}
+            {/* broadcast white ring / domain dark core */}
             {civ.state === "public" && (
                 <span className="absolute inset-[-3px] rounded-full border border-flash" />
             )}

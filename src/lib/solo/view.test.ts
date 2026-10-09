@@ -179,6 +179,29 @@ test("update() hands out a FRESH log array each call (React element-identity bai
     expect(v2.log).not.toBe(v1.log); // 但数组引用必须不同，否则 memo 化组件拿不到新内容
 });
 
+test("log.contact emits SELF-RELATIVE torus deltas matching the centered chart (review I1)", () => {
+    // 相机居中后星图 = 自身相对坐标；日志绝对坐标会与星图失联（玩家不知自己的世界坐标）。
+    // 契约：contact 的 (x,y) = wrapDelta(civ − self)，带符号整数，与星图同构。
+    // slot1 移到 (12,92)——自身在 (0.02,0.02) → 环面差 (+12,−8)，距离 ≈14.4 ≤ 30 可探测。
+    const m = new SoloMatch(7, ["pacifist"], new Map(), {
+        envRng: baseEnvRng(0.025),
+        presetRng: new ScriptedRng([], 0.3), // pacifist 恒 DEVELOP（非静默可被探测）
+    });
+    const tr = new ViewTracker(m);
+    tr.update();
+    m.start();
+    m.env.tech[4] = 9; // 探测概率 0.09 > 0.025
+    m.env.pos[1 * 2] = 12;
+    m.env.pos[1 * 2 + 1] = 92;
+    m.submitAction(1, -1); // t1：探测
+    tr.update();
+    const contacts = tr.getLog().filter((e) => e.key === "log.contact");
+    expect(
+        contacts.some((e) => e.params?.x === "+12" && e.params?.y === "-8"),
+    ).toBe(true); // 相对坐标（原绝对坐标为 12/92——本用例即为其回归锁）
+    expect(contacts.some((e) => e.params?.x === "0" && e.params?.y === "0")).toBe(true); // 同点者 (0,0)
+});
+
 test("domain marker intel is FROZEN at the windup tick end (review Important 1)", () => {
     // env2.py:313 的 known_pair 只滤 ~in_domain 不滤 windup——观测情报喂到【声明刻末】，
     // 域生效刻起才掩蔽 → 快照点 = 风窗刻末 = 玩家收到 live 情报的最后时刻（精确，非近似）。

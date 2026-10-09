@@ -12,7 +12,7 @@ const ANCHOR_GAP = 4;
 export function clampPopoverIntoViewport(pop: HTMLElement) {
     pop.style.translate = "";
     const rect = pop.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
+    const viewportWidth = document.documentElement.clientWidth; // replace `window.innerwidth` (fixed 2026-10-9)
     let shift = 0;
     if (rect.right > viewportWidth - VIEWPORT_PAD) {
         shift = viewportWidth - VIEWPORT_PAD - rect.width - rect.left;
@@ -67,7 +67,7 @@ export type PopoverOnOpen = (pop: HTMLElement, anchor: HTMLButtonElement | null)
  *   means besides pinning
  * - the panel carries `popover="auto"` ⇒ Escape + light dismiss, and only
  *   ONE popover open document-wide (native behavior; the
- *   @oddbird/popover-polyfill mirrors it)
+ *   `@oddbird/popover-polyfill` mirrors it)
  * - `onOpen` runs whenever the panel opens — that is where the component
  *   positions it (clampPopoverIntoViewport / placeFixedPopover)
  *

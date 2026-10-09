@@ -143,11 +143,17 @@ body {
 }
 
 /* --------------------------------------------------------------- effects
-   The single allowed glow in the whole design: the invasion alarm light
-   (DESIGN.md §4). Everything else elevates via border brightness only. */
+   Two allowed glows (DESIGN.md §4, amended 2026-10-09): the invasion alarm
+   light, and the always-on self-marker halo ("which one is me" at a glance
+   on the chart). Everything else elevates via border brightness only. */
 
 .glow-lethal {
     box-shadow: 0 0 24px color-mix(in srgb, var(--color-lethal) 25%, transparent);
+}
+
+/* static (never animated) — the self marker's own light */
+.glow-self {
+    box-shadow: 0 0 12px color-mix(in srgb, var(--color-self) 45%, transparent);
 }
 
 /* static stardust for the star chart — never twinkles: on this screen, the

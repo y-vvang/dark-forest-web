@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import { useI18n, type MessageKey } from "@/i18n";
 import type { LogEntryView } from "@/lib/solo/view";
 
@@ -33,9 +35,19 @@ const CAUSE_KEYS = new Set<MessageKey>([
  * by event kind; each new line fades in once (CSS only, 120ms).
  * Perception-filtered entries (ViewTracker; docs/game-mechanics.md §7).
  * `params.cause` carries a cause.* key name — translated here (nested).
+ *
+ * Auto-scroll (2026-10-09): new entries scroll the container to the bottom —
+ * an instant scrollTop assignment, not a JS animation (CSS-only rule §1.5
+ * intact; the log-in fade remains the only motion). Unconditional per spec.
  */
 export function EventLog({ events }: { events: LogEntryView[] }) {
     const { t } = useI18n();
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+    }, [events.length]);
 
     const translate = (entry: LogEntryView) => {
         if (entry.params?.cause !== undefined) {
@@ -52,6 +64,7 @@ export function EventLog({ events }: { events: LogEntryView[] }) {
     return (
         <Panel title={t("match.log")}>
             <div
+                ref={scrollRef}
                 role="log"
                 aria-live="polite"
                 className="scroll-quiet max-h-40 overflow-y-auto pr-1"

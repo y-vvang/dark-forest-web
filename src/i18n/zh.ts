@@ -70,6 +70,7 @@ export const zh: Dict = {
     "match.target": "选择目标——点击星图上的文明",
     "match.target.cancel": "取消",
     "match.target.skip": "不选目标，打击最近已知",
+    "match.next": "执行 · 下一刻",
     "match.birthSelf": "你的文明诞生了",
     "match.waitBirth": "等待出生——世界运行中",
 

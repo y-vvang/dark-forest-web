@@ -18,7 +18,8 @@
  * 日志条目约定：`params.cause` 携带 cause.* 键名，由 EventLog 嵌套翻译。
  */
 import type { MessageKey, TParams } from "@/i18n";
-import { A_BSELF, A_SILENT } from "@/lib/engine/types";
+import { A_BSELF } from "@/lib/engine/types";
+import { relativeDelta } from "./camera";
 import type { EndView, Phase, SoloMatch } from "./match";
 
 export interface MarkerView {
@@ -47,8 +48,6 @@ export interface MatchView {
     markers: MarkerView[];
     /** 玩家本刻合法动作（env valid 行） */
     valid: boolean[];
-    /** 上刻已结算动作（env last_action；SILENT 不高亮 → null） */
-    lastAction: number | null;
     /** 目标候选（selectTargets 玩家行；STRIKE/INVADE 共用） */
     targetCandidates: number[];
     invasion: { invaderId: number } | null;
@@ -115,7 +114,6 @@ export class ViewTracker {
         const p = m.playerSlot;
         let markers: MarkerView[] = [];
         let valid: boolean[] = new Array(10).fill(false);
-        let lastAction: number | null = null;
         const targetCandidates: number[] = [];
         if (p === null) {
             markers = [{ id: -1, x: 50, y: 50, state: "queued" }];
@@ -155,7 +153,6 @@ export class ViewTracker {
             }
             const vRow = env.valid().subarray(p * 10, (p + 1) * 10);
             valid = [...vRow].map((x) => x === 1);
-            lastAction = env.last_action[p] === A_SILENT ? null : env.last_action[p];
             const probe = new Int32Array(n);
             probe[p] = 4; // STRIKE（候选掩码与 INVADE 同）
             const mask = env.selectTargets(probe);
@@ -180,7 +177,6 @@ export class ViewTracker {
                       },
             markers,
             valid,
-            lastAction,
             targetCandidates,
             invasion: m.phase === "awaiting-rechoice" ? { invaderId: m.getPendingInvader() ?? 0 } : null,
             end: m.getEnd(),
@@ -236,10 +232,19 @@ export class ViewTracker {
             if (publicNow.has(j) && !this.prevPublic.has(j)) {
                 this.emit(tick, "log.broadcast", { id: j }); // ④
             } else {
+                // ③：相对坐标（评审 I1 修正，2026-10-09）——星图为自身相对（相机居中），
+                // 日志坐标须与星图同构（玩家不知自己的世界坐标，绝对坐标会失联）；
+                // 自身位置对玩家已知，环面差无感知泄漏
+                const { dx, dy } = relativeDelta(
+                    env.pos[j * 2],
+                    env.pos[j * 2 + 1],
+                    env.pos[p * 2],
+                    env.pos[p * 2 + 1],
+                );
                 this.emit(tick, "log.contact", {
-                    x: env.pos[j * 2].toFixed(0),
-                    y: env.pos[j * 2 + 1].toFixed(0),
-                }); // ③：坐标，无 tech/res
+                    x: fmtDelta(dx),
+                    y: fmtDelta(dy),
+                });
             }
         }
 
@@ -294,4 +299,10 @@ function countAlive(env: { alive: Uint8Array }): number {
     let c = 0;
     for (const a of env.alive) if (a) c++;
     return c;
+}
+
+/** 有符号整数（−0 归 0）——contact 坐标格式，与居中星图的环面差同构 */
+function fmtDelta(d: number): string {
+    const r = Math.round(d);
+    return r === 0 ? "0" : r > 0 ? `+${r}` : `${r}`;
 }

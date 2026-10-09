@@ -77,6 +77,7 @@ export const en = {
     "match.target": "Select target — click a civilization on the chart",
     "match.target.cancel": "Cancel",
     "match.target.skip": "Skip targeting — strike nearest known",
+    "match.next": "Execute · next tick",
     "match.birthSelf": "Your civilization is born",
     "match.waitBirth": "Waiting to be born — the world runs on",
 
