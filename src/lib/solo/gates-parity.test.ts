@@ -1,7 +1,8 @@
 /**
- * Review Focus 5：UI 门理由与 env 掩码的 parity——穷举 288 组合
- * （tech 6 × res 3 × hasKnown 2 × domain 2 × windup 2），
+ * Review Focus 5：UI 门理由与 env 掩码的 parity——穷举 576 组合
+ * （8 动作 × tech 6 × res 3 × hasKnown 2 × domain 2 × windup 2），
  * 断言 gateOf 给出禁用理由的每个动作，env valid 同为非法。
+ * v2.4：删 strikeWeak/strikeStrong；增 reveal（BOTHER 揭露：已知性 + 广播门）。
  * 反方向不要求：env 可因 gateOf 未覆盖的原因额外禁用（域/风窗行等，由会话层 valid 传递）。
  */
 import { expect, test } from "bun:test";
@@ -10,12 +11,12 @@ import { makeEnv } from "@/lib/engine/test-helpers";
 import { ACTION_NUM, gateOf, type ActionId } from "./gates";
 
 const IDS: ActionId[] = [
-    "silent", "develop", "broadcast", "observe", "domain", "invade", "strike", "strikeWeak", "strikeStrong",
+    "silent", "develop", "broadcast", "reveal", "observe", "domain", "invade", "strike",
 ];
 const TECHS = [0.5, 3, 5.1, 6, 7.1, 9];
 const RES = [1, 10.1, 15];
 
-test("gates parity: every gateOf-blocked action is invalid in env (288 combos)", () => {
+test("gates parity: every gateOf-blocked action is invalid in env (576 combos)", () => {
     const violations: string[] = [];
     let checked = 0;
     for (const tech of TECHS) {
@@ -46,5 +47,5 @@ test("gates parity: every gateOf-blocked action is invalid in env (288 combos)",
         }
     }
     expect(violations.join("; ")).toBe("");
-    expect(checked).toBeGreaterThan(280); // 真实覆盖量（禁用情形确实存在）
+    expect(checked).toBeGreaterThan(400); // 真实覆盖量（禁用情形确实存在）
 });

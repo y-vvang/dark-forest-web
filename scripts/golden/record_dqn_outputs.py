@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""录制 DQN 前向奇偶数据（开发期专用）：12 模型 × 10 随机输入 → numpy 输出。
+"""录制 DQN 前向奇偶数据（开发期专用；v2.4）：4 奖励臂模型 × 10 随机输入 → numpy 输出。
 
 TS 端 dqn-parity 测试（src/lib/opponents/dqn.test.ts）逐模型比对，|ΔQ|≤1e-9。
 容差论证：numpy BLAS 分块求和序与 TS 朴素循环不可逐位一致（~1e-15 相对）；任何
@@ -15,20 +15,17 @@ sys_path = os.path.join(REPO, "experiment", "experiment")
 import sys  # noqa: E402
 
 sys.path.insert(0, sys_path)
-import data2 as dm  # noqa: E402
+import data2_v24 as dm  # noqa: E402
 from model import DQNAgent  # noqa: E402
 
 ARMS = {
-    "main": os.path.join(REPO, "experiment", "runs", "v23_fix", "seed42_main", "checkpoint.npz"),
+    arm: os.path.join(REPO, "experiment", "runs", "v24_arms", arm, "run", "seed42_main", "checkpoint.npz")
+    for arm in ["a_classic", "b_terminal", "c_res", "d_malintent"]
 }
-for arm in ["base_control", "budget100", "budget200", "gamma099", "gamma0999", "lr3e4",
-            "lr12e3", "scale005", "scale02", "shield025", "shield075"]:
-    ARMS[arm] = os.path.join(
-        REPO, "experiment", "runs", "v23_fix_sweep_arms", arm, "run", "seed42_main", "checkpoint.npz")
 
 OUT = os.path.join(REPO, "src", "lib", "engine", "testdata", "dqn-outputs.json")
 rng = np.random.default_rng(777)
-inputs = rng.uniform(-1, 1, size=(10, 38)).astype(np.float32)
+inputs = rng.uniform(-1, 1, size=(10, 36)).astype(np.float32)
 
 arms_out = []
 for arm, path in ARMS.items():

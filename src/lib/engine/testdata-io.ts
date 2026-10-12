@@ -40,7 +40,15 @@ export interface TraceTick {
 }
 
 export interface TraceFile {
-    meta: { seed: number; kinds: string[]; agentArms: Record<string, string>; driver: string; note: string };
+    /** v2.4：cfg = 完整 env 参数（EnvConfig 同名字段；奖励臂轨迹自带 override） */
+    meta: {
+        seed: number;
+        kinds: string[];
+        agentArms: Record<string, string>;
+        driver: string;
+        note: string;
+        cfg: import("./config").EnvConfig;
+    };
     reset: { patch: TracePatch | null; state: EnvSnapshot; obs: string };
     ticks: TraceTick[];
     rngLog: TraceDraw[];

@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { assertConservation } from "./snapshot";
 import { makeEnv, tick } from "./test-helpers";
 
-test("develop: growth 0.05*(1-tech/1e6), softsign reward 0.01*tech/(1+0.2|tech|) (env2.py:557-603)", () => {
+test("develop: growth 0.05*(1-tech/1e6), softsign reward 0.01*tech/(1+0.2|tech|) (env2_v24.py:574-629)", () => {
     const env = makeEnv();
     env.reset();
     env.tech[0] = 6;
@@ -12,6 +12,24 @@ test("develop: growth 0.05*(1-tech/1e6), softsign reward 0.01*tech/(1+0.2|tech|)
     const tech1 = 6 + 0.05 * (1 - 6 / 1e6);
     expect(env.tech[0]).toBeCloseTo(tech1, 12);
     expect(result.rewards[0]).toBeCloseTo((0.01 * tech1) / (1 + 0.2 * Math.abs(tech1)), 12);
+    expect(result.rewardDetail.techTerm[0]).toBeCloseTo(tech1 / (1 + 0.2 * Math.abs(tech1)), 12);
+    expect(result.rewardDetail.resAtReward[0]).toBeCloseTo(10, 12); // res 无流失
+});
+
+test("res_reward_scale stipend on DEVELOP ticks only (v2.4 c/d 臂公式，smoke_v24 口径)", () => {
+    const env = makeEnv([], 0.5, { resRewardScale: 0.0025 });
+    env.reset();
+    env.tech[0] = 6;
+    const actions = new Int32Array(36);
+    actions[0] = 1; // 仅 0 号 DEVELOP；1 号 SILENT（无津贴）
+    const { result } = tick(env, actions);
+    const tech1 = 6 + 0.05 * (1 - 6 / 1e6);
+    expect(result.rewards[0]).toBeCloseTo((0.01 * tech1) / (1 + 0.2 * tech1) + 0.0025 * 10, 12);
+    expect(result.rewards[1]).toBe(0);
+    // techTerm/resAtReward 允许任意参数集重算：四臂 d 组合 = soft 0.01 + res 0.0025
+    const d =
+        0.01 * result.rewardDetail.techTerm[0] + 0.0025 * result.rewardDetail.resAtReward[0];
+    expect(result.rewards[0]).toBeCloseTo(d, 15);
 });
 
 test("develop inside domain ×0.2 (env2.py:564)", () => {
@@ -82,23 +100,25 @@ test("observe with only a domain-known target: no intel, no exposure (stale matr
     expect(env.pending_counter).toEqual([]); // 无目标 → 不曝光
 });
 
-test("birth: pool-afforded endogenous spawn (env2.py:224-254)", () => {
-    // 队列对齐：探测 1296 + boom 36 + 流失 36（全 0.5 无事件）→ 新预滚 12.5 → 出生科技 2.5
-    const env = makeEnv([...Array(1296 + 36 + 36).fill(0.5), 12.5, 2.5], 0.5);
+test("birth: pool-afforded endogenous spawn, NO tech inheritance (env2_v24.py:249-275)", () => {
+    // 队列对齐：探测 1296 + boom 36 + 流失 36（全 0.5 无事件）→ 新预滚 12.5（v2.4 出生
+    // 不再抽取科技——每出生少 1 个 RNG 值，此处脚本恰一个尾值）
+    const env = makeEnv([...Array(1296 + 36 + 36).fill(0.5), 12.5], 0.5);
     env.reset(); // pool=110，预滚 12.5
     const { result } = tick(env, new Int32Array(36));
-    expect(env.tech.slice(0, 4)).toEqual(new Float64Array([1, 2, 3, 4])); // act_tech
-    // percentile([1,2,3,4],[25,75]) 线性插值 → [1.75, 3.25]；出生科技脚本值 2.5 ∈ 区间
-    expect(env.tech[4]).toBeCloseTo(2.5, 12);
+    expect(env.tech[4]).toBe(1.0); // v2.4 无继承：出生科技恒 tech_spawn_lo
     expect(env.res[4]).toBe(12.5);
+    expect(env.spawn_tech[4]).toBe(1.0);
     expect(env.spawn_tick[4]).toBe(1);
     expect(env.alive[4]).toBe(1);
     expect(env.birth_log).toEqual([[1, 4, 12.5]]);
     expect(env.free_pool).toBeCloseTo(110 - 12.5, 10);
     expect(result.info.n_births).toBe(1);
     expect(result.info.n_alive).toBe(5);
-    expect(env.pending_spawns.length).toBe(1); // 新预滚（fill 0.5 → 12.5）
+    expect(env.pending_spawns.length).toBe(1); // 新预滚（脚本值 12.5）
     expect(env.pending_spawns[0]).toBe(12.5);
+    // 出生恰好消耗 1 个 RNG 值（再预滚）——科技抽取已删
+    expect((env.rng as import("./rng").ScriptedRng).consumed).toBe(81 + 1296 + 36 + 36 + 1);
     assertConservation(env);
 });
 

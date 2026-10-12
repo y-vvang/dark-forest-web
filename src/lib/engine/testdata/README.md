@@ -1,21 +1,30 @@
-# testdata 口径披露（一致性验收 · 金标准）
+# testdata 口径披露（一致性验收 · 金标准，v2.4）
 
 生成：`PYTHONUTF8=1 python3 scripts/golden/record_golden.py`（开发期专用；只读引用 `experiment/`）。
-机制：录制 env2.py 每一次 RNG 调用（`uniform`/`choice` 的方法+参数+返回值）与逐刻全状态快照；
+机制：录制 env2_v24.py 每一次 RNG 调用（`uniform`/`choice` 的方法+参数+返回值）与逐刻全状态快照；
 TS 端 `ReplayRng`（`src/lib/engine/rng.ts`）按序喂入录制值 → 引擎重演同一随机轨迹 →
 逐刻全状态/obs/info/rewards 精确比对 + 消耗序断言（`assertExhausted`）。**逻辑偏差确定性爆出，无统计功效依赖。**
+
+v2.4 录制要点（vs v2.3 轮）：轨迹 `meta.cfg` 记录完整 env 参数（奖励臂轨迹自带其
+override——TS 回放按 trace 自建 EnvConfig）；驱动循环对齐 `stage_b_v24.py`
+（目标请求集 = INVADE/STRIKE/BROADCAST_OTHER/OBSERVE 四动作）；出生无科技继承
+（**每次内生出生少消耗 1 个 RNG 值**，v2.3 的 percentile 抽取已不存在）。
 
 ## 轨迹清单
 
 | 文件 | 内容 | 备注 |
 |---|---|---|
-| `trace-main-s1.json.gz` | 完整 250 刻，stage_b 池型（learner=main checkpoint + random/df/pacifist 各 9） | 32 次内生出生，终局 17 存活 |
+| `trace-main-s1.json.gz` | 完整 250 刻，stage_b 池型（learner=a_classic + random/df/pacifist 各 9） | a_classic = v2.3-fix 原味奖励臂 |
 | `trace-main-s2.json.gz` | 完整 250 刻，全 pacifist | 发展/爆炸/出生/饿死长尾 |
+| `trace-main-d.json.gz` | 完整 250 刻，stage_b 池型（learner=d_malintent）+ 该臂奖励参数 | 覆盖 BROADCAST_OTHER 揭露 / attack 赏金 / res 津贴路径 |
 | `trace-tgt-mutual.json.gz` | 入侵→反咬→互毁 | |
 | `trace-tgt-shield.json.gz` | 护盾挡下（零 RNG 消耗） | |
 | `trace-tgt-windup.json.gz` | 黑域风窗免疫打击 + 入域后入侵取消 | |
-| `trace-tgt-heat.json.gz` | 资源枯竭改造局 → **稠密晚局**（19 存活、t=250 终局） | 名为 heat 实为晚局经济覆盖：出生-死亡动态平衡未达热寂；热寂 done 分支由 `resolve-c.test.ts` 单测锁定 |
-| `stats.json` | 统计等价第二口径参考（30 局 presets-only 聚合） | 由 stat-equivalence 测试消费 |
+| `trace-tgt-heat.json.gz` | 资源枯竭改造局 → 晚局经济覆盖 | 热寂 done 分支由 `resolve-c.test.ts` 单测锁定 |
+| `stats.json` | 统计等价第二口径参考（30 局 presets-only 聚合，v2.4 环境） | 由 stat-equivalence 测试消费 |
+
+另：`dqn-outputs.json`（4 奖励臂 × 10 随机输入的 numpy 前向，`record_dqn_outputs.py`）由
+`src/lib/opponents/dqn.test.ts` 消费；`public/models/<arm>.json`（4 臂权重，`convert_models.py`）。
 
 ## 容差与口径（与 golden-replay.test.ts 一致）
 
@@ -36,6 +45,9 @@ TS 端 `ReplayRng`（`src/lib/engine/rng.ts`）按序喂入录制值 → 引擎�
    p=0.95 断言天然 5% flake；TS 以 0.94/0.96 确定化（口径偏离，无 flake）。
 3. **runtime PRNG = sfc32**（GameRng），与 numpy 无关——游戏运行时自成体系，
    同种子复现单局即可；金标准不经过 GameRng。
+4. **TickResult.rewardDetail（TS-only 诊断）**：引擎在 rewards 计算处顺带记录逐刻
+   奖励原料（techTerm/resAtReward/attackCount/bdEnter），供游戏层奖励展示组合任意
+   参数集的奖励流。**不进 info、不参与 parity**——录制端无此字段，比对不受影响。
 
 ## 轨迹格式扩展：`reset.patch`
 
@@ -48,8 +60,7 @@ TS 端 `ReplayRng`（`src/lib/engine/rng.ts`）按序喂入录制值 → 引擎�
 
 1. 近邻块布局：`np.concatenate(axis=-1)` 拼的是 (n,NEAR_K) 列组 → **feature-major**
    （[Δx×3, Δy×3, d×3, tech×3, res×3, public×3, in_domain×3]），非逐邻居 7 元组。
-2. **域内目标的近邻几何**：`big` 矩阵（env2.py:310）不滤域内者——已知+存活的域内目标
-   以真实 Δx/Δy/d 进入观测；仅 tech/res/public/in_domain 情报特征被 known_pair 掩蔽。
-   （env-model-v23.md 的"非域文明×7"描述不精，以代码为准——已记入 CLAUDE.md 已知出入。）
-3. **percentile 插值分支**：numpy `_lerp` 在 t≥0.5 走 `b−(b−a)·(1−t)`（数值优化路径），
-   须照抄才能逐位一致。
+2. **域内目标的近邻几何**：`big` 矩阵不滤域内者——已知+存活的域内目标以真实
+   Δx/Δy/d 进入观测；仅 tech/res/public/in_domain 情报特征被 known_pair 掩蔽。
+3. **percentile 插值分支**（v2.3 历史机制，v2.4 已随无继承删除）：numpy `_lerp` 在
+   t≥0.5 走 `b−(b−a)·(1−t)`（数值优化路径），须照抄才能逐位一致。

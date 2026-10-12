@@ -1,18 +1,19 @@
 import { expect, test } from "bun:test";
 
+import { numpyArgsort } from "./numpy-sort";
 import { makeEnv } from "./test-helpers";
 
 const LOG_REF = Math.log1p(50);
 /**
- * 每行 38 = 7 标量 + 10 one-hot + 近邻块（feature-major，env2.py:320-328 的
+ * 每行 36 = 7 标量 + 8 one-hot + 近邻块（feature-major，env2_v24.py:336-344 的
  * np.concatenate(axis=-1) 拼各 (n,NEAR_K) 列组）：
- * [17+k]=Δx [20+k]=Δy [23+k]=d [26+k]=tech [29+k]=res [32+k]=public [35+k]=in_domain
+ * [15+k]=Δx [18+k]=Δy [21+k]=d [24+k]=tech [27+k]=res [30+k]=public [33+k]=in_domain
  */
 function row(env: ReturnType<typeof makeEnv>, i: number) {
-    return env.obs().slice(i * 38, (i + 1) * 38);
+    return env.obs().slice(i * 36, (i + 1) * 36);
 }
 
-test("obs layout: scalars + onehot + masked near blocks (feature-major)", () => {
+test("obs layout: scalars + onehot(8) + masked near blocks (feature-major)", () => {
     const env = makeEnv();
     env.reset(); // techs [1,2,3,4]，res 全 10，全坐标 (0.02,0.02)，无已知
     const r0 = row(env, 0);
@@ -24,24 +25,24 @@ test("obs layout: scalars + onehot + masked near blocks (feature-major)", () => 
     expect(r0[5]).toBe(0);
     expect(r0[6]).toBe(0);
     expect(r0[7]).toBe(1); // last_action = SILENT one-hot
-    expect(r0.slice(8, 17).every((v) => v === 0)).toBe(true);
+    expect(r0.slice(8, 15).every((v) => v === 0)).toBe(true);
     // 无已知 → 三近邻全掩蔽：Δx/Δy/d 全 0，tech 全 -1，res 全 -0.05，public/in_domain 全 0
+    expect(r0[15]).toBe(0);
+    expect(r0[16]).toBe(0);
     expect(r0[17]).toBe(0);
     expect(r0[18]).toBe(0);
-    expect(r0[19]).toBe(0);
-    expect(r0[20]).toBe(0);
-    expect(r0[23]).toBe(0);
+    expect(r0[21]).toBe(0);
+    expect(r0[24]).toBe(-1);
+    expect(r0[25]).toBe(-1);
     expect(r0[26]).toBe(-1);
-    expect(r0[27]).toBe(-1);
-    expect(r0[28]).toBe(-1);
+    expect(r0[27]).toBe(Math.fround(-1 / 20));
+    expect(r0[28]).toBe(Math.fround(-1 / 20));
     expect(r0[29]).toBe(Math.fround(-1 / 20));
-    expect(r0[30]).toBe(Math.fround(-1 / 20));
-    expect(r0[31]).toBe(Math.fround(-1 / 20));
-    expect(r0[32]).toBe(0);
-    expect(r0[35]).toBe(0); // Q3：in_domain 特征恒 0
+    expect(r0[30]).toBe(0);
+    expect(r0[33]).toBe(0); // Q3：in_domain 特征恒 0
 });
 
-test("observed intel fills tech/res; torus wrap delta (env2.py:311-318)", () => {
+test("observed intel fills tech/res; torus wrap delta (env2_v24.py:329-334)", () => {
     const env = makeEnv();
     env.reset();
     env.pos[2 * 2] = 98; // slot 2 x=98；自身 x=0.02 → 环面 Δ = 98-0.02-100 = -2.02
@@ -51,15 +52,15 @@ test("observed intel fills tech/res; torus wrap delta (env2.py:311-318)", () => 
     env.res[2] = 14;
     const r0 = row(env, 0);
     expect(r0[2]).toBe(Math.fround(1 / 35)); // 已知存活计数
-    expect(r0[17]).toBe(Math.fround(-2.02 / 50)); // k=0（唯一候选）Δx 环面回绕
-    expect(r0[18]).toBe(0); // k=1 掩蔽
-    expect(r0[20]).toBe(0); // k=0 Δy（同 y）
-    expect(r0[23]).toBe(Math.fround(2.02 / 50)); // k=0 d
-    expect(r0[26]).toBe(Math.fround(Math.log1p(7) / LOG_REF)); // k=0 已观测 → 情报
-    expect(r0[27]).toBe(-1); // k=1 掩蔽
-    expect(r0[29]).toBe(Math.fround(14 / 20));
-    expect(r0[32]).toBe(0);
-    expect(r0[35]).toBe(0);
+    expect(r0[15]).toBe(Math.fround(-2.02 / 50)); // k=0（唯一候选）Δx 环面回绕
+    expect(r0[16]).toBe(0); // k=1 掩蔽
+    expect(r0[18]).toBe(0); // k=0 Δy（同 y）
+    expect(r0[21]).toBe(Math.fround(2.02 / 50)); // k=0 d
+    expect(r0[24]).toBe(Math.fround(Math.log1p(7) / LOG_REF)); // k=0 已观测 → 情报
+    expect(r0[25]).toBe(-1); // k=1 掩蔽
+    expect(r0[27]).toBe(Math.fround(14 / 20));
+    expect(r0[30]).toBe(0);
+    expect(r0[33]).toBe(0);
 });
 
 test("known-but-not-observed neighbor: position features, no intel (tech=-1)", () => {
@@ -67,13 +68,33 @@ test("known-but-not-observed neighbor: position features, no intel (tech=-1)", (
     env.reset();
     env.known[0 * 36 + 1] = 1; // 仅知存在与位置
     const r0 = row(env, 0);
-    expect(r0[17]).toBe(Math.fround(0 / 50)); // 同点 → Δ=0
-    expect(r0[23]).toBe(Math.fround(0 / 50));
-    expect(r0[26]).toBe(-1); // 无 OBSERVE 情报
-    expect(r0[29]).toBe(Math.fround(-1 / 20));
+    expect(r0[15]).toBe(Math.fround(0 / 50)); // 同点 → Δ=0
+    expect(r0[21]).toBe(Math.fround(0 / 50));
+    expect(r0[24]).toBe(-1); // 无 OBSERVE 情报
+    expect(r0[27]).toBe(Math.fround(-1 / 20));
 });
 
-test("domain target: real geometry, masked intel, in_domain feature 0 (env2.py:310-327)", () => {
+test("masked-row semantics: far known civ's flags enter masked slots (order from np.argsort, env2_v24.py:327-343)", () => {
+    // 候选不足 3：掩码行 Δx/Δy/d=0、tech=-1、res=-0.05，但 public 取【排序后第 k 位】
+    // 远方文明的旗标（known_pair 距离无关）——须与 numpy argsort 的 inf 平局序逐位一致。
+    const env = makeEnv();
+    env.reset();
+    env.pos[5 * 2] = 80; // 5 号移远（>30）——known+alive+非域，但不在半径内
+    env.known[0 * 36 + 5] = 1; // 0 号仅知 5 号（远处）
+    env.public_[5] = 1; // 5 号已被揭露
+    const r0 = row(env, 0);
+    const big = new Float64Array(36).fill(Infinity); // 0 号 big 行全 inf（无候选）
+    const order = numpyArgsort(big);
+    for (const k of [0, 1, 2]) {
+        expect(r0[30 + k]).toBe(order[k] === 5 ? 1 : 0); // public：旗标距离无关
+        expect(r0[24 + k]).toBe(-1); // observed[0,5]=0 → 无情报
+        expect(r0[27 + k]).toBe(Math.fround(-1 / 20));
+        expect(r0[15 + k]).toBe(0); // Δx 掩码（dmask）
+        expect(r0[21 + k]).toBe(0); // d 掩码
+    }
+});
+
+test("domain target: real geometry, masked intel, in_domain feature 0 (env2_v24.py:324-343)", () => {
     const env = makeEnv();
     env.reset();
     env.pos[1 * 2] = 10; // slot1 距离 9.98
@@ -82,13 +103,13 @@ test("domain target: real geometry, masked intel, in_domain feature 0 (env2.py:3
     env.known[0 * 36 + 2] = 1;
     env.in_domain[1] = 1; // 最近者入域——big 不滤域内者 → k=0 仍是 slot1（真实几何）
     const r0 = row(env, 0);
-    expect(r0[17]).toBe(Math.fround((10 - 0.02) / 50)); // k=0 = slot1 的 Δx（几何保留）
-    expect(r0[23]).toBe(Math.fround(9.98 / 50)); // k=0 的 d
-    expect(r0[26]).toBe(-1); // k=0 tech 掩蔽（known_pair 含 ~in_domain）
-    expect(r0[29]).toBe(Math.fround(-1 / 20));
-    expect(r0[35]).toBe(0); // Q3：in_domain 特征恒 0
-    expect(r0[18]).toBe(Math.fround((20 - 0.02) / 50)); // k=1 = slot2
-    expect(r0[27]).toBe(-1);
+    expect(r0[15]).toBe(Math.fround((10 - 0.02) / 50)); // k=0 = slot1 的 Δx（几何保留）
+    expect(r0[21]).toBe(Math.fround(9.98 / 50)); // k=0 的 d
+    expect(r0[24]).toBe(-1); // k=0 tech 掩蔽（known_pair 含 ~in_domain）
+    expect(r0[27]).toBe(Math.fround(-1 / 20));
+    expect(r0[33]).toBe(0); // Q3：in_domain 特征恒 0
+    expect(r0[16]).toBe(Math.fround((20 - 0.02) / 50)); // k=1 = slot2
+    expect(r0[25]).toBe(-1);
     expect(row(env, 5).every((v) => v === 0)).toBe(true); // 未出生行
     env.alive[1] = 0;
     expect(row(env, 1).every((v) => v === 0)).toBe(true); // 死亡行

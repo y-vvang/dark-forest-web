@@ -3,27 +3,25 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { ConfigPanel } from "@/components/config-panel";
 import { OpponentCard } from "@/components/opponent-card";
 import { Panel } from "@/components/panel";
 import { BackLink, TopBar } from "@/components/top-bar";
-import { useI18n, type MessageKey } from "@/i18n";
-import { MODEL_CATALOG, PRESET_IDS } from "@/lib/opponents/catalog";
+import { useI18n } from "@/i18n";
+import { V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
+import { OPPONENTS } from "@/lib/opponents/catalog";
+import { serializeConfigDiff } from "@/lib/solo/cfg-io";
 
-const PRESET_NAME: Record<string, MessageKey> = {
-    random: "opp.random.name",
-    df: "opp.df.name",
-    pacifist: "opp.pacifist.name",
-};
-
-const PRESET_DESC: Record<string, MessageKey> = {
-    random: "opp.random.desc",
-    df: "opp.df.desc",
-    pacifist: "opp.pacifist.desc",
-};
-
+/**
+ * /solo 对手选择（2026-10-10 用户修订）：预制策略与 v2.4 四臂模型**合并单一列表**
+ * （原"预制/模型"分节有误导性）；对手卡**内联详情**（无 popover——与点击选择冲突），
+ * 详情 = 动作画像（非胜率）。下方 = 世界常量配置面板（开局前可配置）。
+ * 开始对局：op= 逗号 id + env 配置差集写 sessionStorage（df.env-cfg）。
+ */
 export default function SoloPage() {
     const { t } = useI18n();
-    const [selected, setSelected] = useState<Set<string>>(() => new Set(["main"]));
+    const [selected, setSelected] = useState<Set<string>>(() => new Set(["a_classic"]));
+    const [cfg, setCfg] = useState<EnvConfig>({ ...V24_CONFIG });
     const toggle = (value: string) => {
         setSelected((prev) => {
             const next = new Set(prev);
@@ -32,11 +30,14 @@ export default function SoloPage() {
             return next;
         });
     };
-    /** URL 序：预制在前、模型按目录序 */
-    const opParam = [
-        ...PRESET_IDS.filter((id) => selected.has(id)),
-        ...MODEL_CATALOG.filter((m) => selected.has(m.id)).map((m) => m.id),
-    ].join(",");
+    /** URL 序 = 目录序（预制在前、臂 a→d）；配置差集走 sessionStorage */
+    const opParam = OPPONENTS.filter((o) => selected.has(o.id))
+        .map((o) => o.id)
+        .join(",");
+
+    const start = () => {
+        window.sessionStorage.setItem("df.env-cfg", serializeConfigDiff(cfg));
+    };
 
     return (
         <div className="flex min-h-svh flex-col">
@@ -46,44 +47,35 @@ export default function SoloPage() {
             />
             <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6">
                 <section className="flex flex-col gap-2">
-                    <h2 className="text-lg text-ink">{t("solo.preset")}</h2>
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        {PRESET_IDS.map((kind) => (
-                            <OpponentCard
-                                key={kind}
-                                value={kind}
-                                selected={selected.has(kind)}
-                                onSelect={toggle}
-                                title={t(PRESET_NAME[kind])}
-                                desc={t(PRESET_DESC[kind])}
-                            />
-                        ))}
+                    <h2 className="text-lg text-ink">{t("solo.opponents")}</h2>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        {OPPONENTS.map((o) =>
+                            o.kind === "preset" ? (
+                                <OpponentCard
+                                    key={o.id}
+                                    value={o.id}
+                                    selected={selected.has(o.id)}
+                                    onSelect={toggle}
+                                    title={t(o.name)}
+                                    desc={t(o.desc)}
+                                />
+                            ) : (
+                                <OpponentCard
+                                    key={o.id}
+                                    value={o.id}
+                                    selected={selected.has(o.id)}
+                                    onSelect={toggle}
+                                    title={o.id}
+                                    meta={o.meta}
+                                    override={o.override}
+                                    desc={t(o.profile)}
+                                />
+                            ),
+                        )}
                     </div>
                 </section>
 
-                <section className="flex flex-col gap-2">
-                    <h2 className="text-lg text-ink">{t("solo.models")}</h2>
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        {MODEL_CATALOG.map((model) => (
-                            <OpponentCard
-                                key={model.id}
-                                value={model.id}
-                                selected={selected.has(model.id)}
-                                onSelect={toggle}
-                                title={model.id}
-                                meta={model.meta}
-                                desc={
-                                    model.main === true
-                                        ? t("solo.model.main")
-                                        : (model.override ?? t("solo.model.control"))
-                                }
-                                stat={t("solo.model.survivalFmt", {
-                                    v: model.survival.toFixed(3),
-                                })}
-                            />
-                        ))}
-                    </div>
-                </section>
+                <ConfigPanel cfg={cfg} onChange={setCfg} />
 
                 <Panel
                     title={t("solo.pool")}
@@ -97,6 +89,7 @@ export default function SoloPage() {
                 {selected.size > 0 && opParam !== "" ? (
                     <Link
                         href={`/match?op=${opParam}`}
+                        onClick={start}
                         className="rounded-panel bg-self px-4 py-3 text-center text-base font-bold text-panel hover:opacity-90"
                     >
                         {t("solo.start")}

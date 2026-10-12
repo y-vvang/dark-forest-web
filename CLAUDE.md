@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 本仓库包含两部分：
 
 - `experiment/` —— **只读参考**：已完成的"黑暗森林法则多智能体强化学习验证"实验（纯 Python/numpy，
-  Double-DQN 自博弈，v1.0→v2.3-fix 九个版本）。**禁止改动此目录下任何文件**；游戏所需的
-  checkpoint 等数据以复制/引用方式取用。
+  Double-DQN 自博弈，v1.0→v2.4 十个轮次；现为**符号链接指向的 git 仓库**，用户 2026-10-10 变更，
+  便于追踪实验变化）。**禁止改动此目录下任何文件**；游戏所需的 checkpoint 等数据以复制/引用方式取用；
+  Python 运行后须清理其 `__pycache__`。
 - 仓库根 —— 游戏本体（Next.js + TypeScript，待开发）。
 
 游戏定义（用户 2026-09-29 原始需求，勿走样）：
@@ -17,12 +18,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 模式 (a) **与智能博弈**：对手可选"已训练的模型"（DQN checkpoint）或"预制策略"
   （random / DF 启发式 / pacifist），均来自原实验。
 - 模式 (b) **在线博弈**：不引入账号系统，所有在线用户一起排队入场，共享同一世界。
-- **游戏环境必须是 v2.3-fix 实验环境的忠实移植**——一致性是硬要求，不是偏好。
+- **游戏环境必须是 v2.4 实验环境的忠实移植**（v2.3-fix 的后继轮次：观测优先信息原则 +
+  同起跑线 + 四奖励臂，2026-10-09 spec）——一致性是硬要求，不是偏好。
 
 ## 硬性规则（用户指定，违反=返工）
 
-1. **先理解后开发**：动任何游戏代码前，先读 `docs/env-model-v23.md` 与 `docs/ai-opponents.md`；
-   两文档与代码冲突时，以 `experiment/experiment/env2.py` 为最终权威。
+1. **先理解后开发**：动任何游戏代码前，先读 `docs/env-model-v23.md`（已升版 v2.4）与
+   `docs/ai-opponents.md`；两文档与代码冲突时，以 `experiment/experiment/env2_v24.py` 为最终权威。
 2. **UI 先行**：先写 `DESIGN.md`（设计系统/视觉规范），确认后产出 HTML 原型，最后实现；
    样式全程保持一致。
 3. **UI 约束**：只用默认字体 + `monospace`；**不用 `<canvas>`**；克制使用动画，
@@ -54,33 +56,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   → 再写组件。**组件层禁止任何硬编码的用户可见字符串**（双语硬写也不行，一律走字典）。
   键名按屏分组：`nav./home./solo./match./actions./log./modal./end./online./legend./opp./aria./label./cause.`。
 
-## 权威口径（v2.3-fix）与事故警示
+## 权威口径（v2.4）与事故警示
 
 | 内容 | 权威来源 |
 |---|---|
-| 环境代码 | `experiment/experiment/env2.py`（含 2026-09-22 打击结算修复，629 行，`DarkForestEnv2` 单类参数化） |
-| 环境参数 | `experiment/experiment/config_v23.yaml` |
-| 回归测试 | `experiment/experiment/tests/test_strike_fix.py`（10 种子 × 击杀/守恒/护盾三断言） |
-| 已训练模型 | `experiment/runs/v23_fix/seed42_main/checkpoint.npz`（主，600 回合自博弈）+ `experiment/runs/v23_fix_sweep_arms/<臂>/run/seed42_main/`（11 臂） |
-| 评测产物 | `experiment/results/v23_fix/{stage_b,analysis,sweep}.json` |
-| 实验结论 | `experiment/docs/experiment_report.md` 第六部分（391-430 行，v2.3-fix） |
+| 环境代码 | `experiment/experiment/env2_v24.py`（654 行，`DarkForestEnv2` 单类参数化；v2.3-fix 链 env2.py 原样保留） |
+| 环境参数 | `experiment/experiment/config_v24.yaml` + `experiment/runs/v24_arms/<臂>/config.yaml`（四臂 override） |
+| 回归锚 | `experiment/experiment/tests/test_strike_fix.py`（v2.3-fix，打击逻辑未变）+ `experiment/experiment/smoke_v24.py`（v2.4 冒烟） |
+| 已训练模型 | `experiment/runs/v24_arms/{a_classic,b_terminal,c_res,d_malintent}/run/seed42_main/checkpoint.npz`（各 600 回合自博弈，updates 149987；v2.3-fix 12 checkpoint 与现环境不兼容已退役） |
+| 评测产物 | `experiment/results/v24_arms/`（四臂 stage_b.json + summary.json） |
+| 实验结论 | `experiment/docs/experiment_report.md` 第七部分（v2.4）+ `experiment/reports/v24_arms_brief.md` |
 
 - **2026-09-22 致命 bug**：v2.0–v2.3 旧环境"打击击杀只记事件、从不清除受害者 `alive` 标志"——
   被打击的文明实际存活。因此 `experiment/archive_incident_20260922/` 内**全部 v2.x 产物仅作事故档案**
   （旧路径名 runs_v23/、results_v23/ 等整理后只存在于档案内），绝不可作为游戏参数、结论或对手强度
   依据；报告第五部分就地保留但已作废。v1.x 数据不受影响（bug 自 v2 起）。
 - **文档与代码的已知出入（一律以代码为准）**：
-  ① 文档称黑域"风窗期可被打击"，实际 `env2.py:458-466,513-514` 中 `domain_windup` 同样免疫打击
-  与入侵（风窗期只剩"可被探测"）；
-  ② `env2.py:70` 注释"obs=36"已过时，实际 7+10+21=**38**；
-  ③ `config_v23.yaml` 的 `develop_reward: 0.05` 未被 `resolve()` 使用（奖励走 `softsign_reward_scale`）；
+  ① 文档称黑域"风窗期可被打击"，实际 `domain_windup` 同样免疫打击与入侵（风窗期只剩"可被探测"）；
+  ②（v2.4 已消解）v2.3 注释"obs=36"过时——v2.4 实为 7+8+21=**36**，注释与代码一致；
+  ③ `config_v24.yaml` 的 `develop_reward: 0.05` 未被 `resolve()` 使用（奖励走 `softsign_reward_scale`）；
   ④ `scripts/pipeline_v23_fix.sh` 注释"12 arms"实为 11 臂，且内含原沙箱硬编码路径（本机不可运行）；
-  ⑤ **近邻观测块**（2026-10-01 金标准回放发现）：布局是 **feature-major**——
-  `np.concatenate(axis=-1)`（env2.py:320-328）拼各 (n,3) 列组 → `[Δx×3, Δy×3, d×3, tech×3,
-  res×3, public×3, in_domain×3]`，而非"逐邻居 7 元组"；且 `big` 矩阵（env2.py:310）**不滤域内
-  目标**——已知+存活的域内文明以真实 Δx/Δy/d 进入观测，仅 tech/res/public/in_domain 情报
-  特征被 known_pair 掩蔽（in_domain 特征恒 0）。env-model-v23.md 的"3 个最近已知存活非域
-  文明×7"描述不精；同文件 obs 布局以 `src/lib/engine/env.ts` obs() 与金标准轨迹为准。
+  ⑤ **近邻观测块**（2026-10-01 金标准回放发现；2026-10-11 v2.4 复核更新）：布局是
+   **feature-major**——`np.concatenate(axis=-1)` 拼各 (n,3) 列组 → `[Δx×3, Δy×3, d×3, tech×3,
+   res×3, public×3, in_domain×3]`（v2.4 索引自 15 起：15/18/21/24/27/30/33+k）；`big` 矩阵
+   **不滤域内目标**（已知+存活的域内文明以真实几何进入，仅情报特征被 known_pair 掩蔽，
+   in_domain 特征恒 0）。**Q13（v2.4 新发现）**：候选不足 3 时掩码行 tech/res/public 取
+   argsort 第 k 位文明的旗标（known_pair/observed **距离无关**）——v2.3"补位槽内容确定"断言
+   为侥幸，v2.4 揭露机制使 public 泄漏爆出；numpy argsort 平局序非稳定非索引序 → 已逐位移植
+   numpy 1.26.4 introsort（`src/lib/engine/numpy-sort.ts`，Windows 轮子 MSVC 禁 SIMD 走标量
+   aquicksort_；`testdata/argsort-vectors.json` 2005 矢量锁定；其他构建 AVX512 平局序不同——
+   同为伪影）。
 - 参数来源：`softsign_a=0.2` 为用户指定且**至今未做敏感性扫描**的继承常数；`shield_cost_frac=0.5`
   用户指定但已在 sweep 中扫描（0.25/0.5/0.75 学习者存活 0.775/0.669/0.613，单调）。游戏如需改动
   任何环境参数，必须在设计文档中明示"这是对实验的偏离"。
@@ -88,28 +93,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   分箱与 `stage_b.json`（150 ep）的存活率不可混用；sweep 短臂（150 ep）仅可相对比较；v2.x 为
   单训练种子（42），引用任何数字必须带此披露。
 
-## 环境模型速查（v2.3-fix；完整移植规格见 docs/env-model-v23.md）
+## 环境模型速查（v2.4；完整移植规格见 docs/env-model-v23.md）
 
 - **世界**：[0,100)² **连续坐标**环面（"Grid"是历史名称，并非离散网格）；36 个**一次性**槽位
   （出生槽不复用，单局最多 36 次出生）；定长 250 刻结算；资源总预算 150 逐刻守恒
   （`总量 − Σ存活资源 − 自由池 ≡ 0`，以 info 字段报告残差而非 assert）。
-- **出生**：初始 4 文明（tech~U[0.5,10]、res~U[5,20] 超预算则按比例缩放）；此后恒有**一个**预滚的
-  下次出生资源 U[5,20]，自由池攒够即诞生（每刻至多 1 个、取最靠前空槽），出生科技按存活文明
-  科技 P25–P75 抽取（最小跨度 1.0）。
+- **出生**：初始 4 文明（tech 恒 =tech_spawn_lo=1.0、res~U[5,20] 超预算则按比例缩放）；此后恒有
+  **一个**预滚的下次出生资源 U[5,20]，自由池攒够即诞生（每刻至多 1 个、取最靠前空槽）。**v2.4
+  无科技继承**：出生科技恒 1.0（同起跑线；v2.3 的 P25–P75 抽取已删，每出生少消耗 1 个 RNG 值）。
 - **动作（10 个，枚举序）**：
 
 | # | 动作 | 门槛 | 时机 | 效果 |
 |---|---|---|---|---|
 | 0 | SILENT | 无 | 即时 | 被探测截面 ×0.25 |
-| 1 | DEVELOP | 无 | 即时 | 科技 +0.05·(1−tech/10⁶)≈线性；奖励 +0.01·tech/(1+0.2\|tech\|) |
-| 2 | BROADCAST_SELF | tech>1 或 res>10 | 下轮 | 自己坐标对全体可见（垂死者广播照常生效） |
-| 3 | BROADCAST_OTHER | — | — | **已退役**，任何状态恒非法 |
-| 4 | STRIKE | tech>7 且有已知目标 | 即时 | 显式目标，否则最近已知；p_kill=clip(0.55+0.12Δtech, 0.15, 0.95) |
+| 1 | DEVELOP | 无 | 即时 | 科技 +0.05·(1−tech/10⁶)≈线性；奖励 softsign·tech/(1+0.2\|tech\|) +（>0 时）res_reward·res |
+| 2 | BROADCAST_ALL | tech>1 或 res>10 | 下轮 | 自己坐标对全体可见（垂死者广播照常生效；v2.4 改名自 BROADCAST_SELF） |
+| 3 | BROADCAST_OTHER | 有已知存活非域目标 + tech>1 或 res>10 | 下轮 | **v2.4 恢复=揭露**：公开已知目标坐标给全宇宙，**发送者不暴露**（借刀杀人/归因歧义，Q14）；须显式目标；d 臂付 attack_reward |
+| 4 | STRIKE | tech>7 且有已知目标 | 即时 | 显式目标，否则最近已知；p_kill=clip(0.55+0.12Δtech, 0.15, 0.95)；击杀认领付 attack_reward |
 | 5 | BLACK_DOMAIN | tech>5 | 下轮生效 | 不可逆；免疫探测/打击/入侵；增长×0.2、爆炸×0.1；入场 −0.5；域内仅可 DEVELOP/SILENT |
-| 6 | INVADE | 有已知目标（无科技门槛） | 即时 | 必杀；掠夺受害者半数资源；受害者先获通知并可重选（反咬=互毁）；**无视护盾** |
-| 7 | OBSERVE | tech>5 且有已知目标 | 即时+下轮 | 获最近已知目标精确 tech/res；下轮被一随机文明发现 |
-| 8 | STRIKE_WEAK | tech>7 且有已知目标 | 即时 | 打已知最弱者（同一 p_kill 公式） |
-| 9 | STRIKE_STRONG | tech>7 且有已知目标 | 即时 | 打已知最强者 |
+| 6 | INVADE | 有已知目标（无科技门槛） | 即时 | 必杀；掠夺受害者半数资源（付 attack_reward）；受害者先获通知并可重选（反咬=互毁）；**无视护盾** |
+| 7 | OBSERVE | tech>5 且有已知目标 | 即时+下轮 | **v2.4 显式选目标**（否则最近已知）；获目标精确 tech/res；下轮被一随机文明发现 |
+
+（v2.4 删 STRIKE_WEAK/STRONG——按未观测科技排序=观测前作弊；N_ACTIONS 10→8、OBS_DIM 38→36。）
 
 - **护盾**：目标 tech ≥ 2× 打击者 → 打击被挡，目标损失自身资源 50% 入自由池（打击者零成本、不消耗 RNG）。
 - **探测**：p = min(0.03·√tech_探测者 ×(0.25 若目标本刻 SILENT), 0.35)；探测者科技驱动概率，
@@ -117,15 +122,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   只知存在与位置，不泄露 tech/res（需 OBSERVE）；**已知永不遗忘、恒星位置永不变**。
 - **经济**：流失 p=0.02/刻 损 U[0.5,2] 入自由池；res≤0 饿死（黑域内照常）；尸体余量入自由池；
   掠夺为转移不进池；科技爆炸 p=0.01/刻 ×U[1.6,2.2] 复合无上限（域内×0.1）。
-- **每刻结算顺序**：域生效/入场 → 观测反曝光 → 延迟广播 → 被动探测 → 广播入队 → 打击（护盾/
-  击杀置 alive=False）→ 入侵（反咬互毁+掠夺）→ 观测 → 发展/爆炸 → 流失/饿死 → 尸体结算 →
-  奖励 → 内生出生 → t+=1。
+- **每刻结算顺序**：域生效/入场 → 观测反曝光 → 延迟公开（BALL 与揭露同式）→ 被动探测 →
+  广播入队（先全 BALL 再全 BOTHER，两独立循环）→ 打击（护盾/击杀置 alive=False）→ 入侵
+  （反咬互毁+掠夺）→ 观测（显式目标）→ 发展/爆炸 → 流失/饿死 → 尸体结算 → 奖励 → 内生出生 → t+=1。
 - **终止**：t≥250，或热寂（全灭且自由池 < 下次预滚额）。无"最后幸存者即胜"判定——独存活者也要
   走满 250 刻；玩家目标是**活到终局**。
-- **观测（38 维）**：7 自身标量（log1p(tech)/log1p(50)、res/20、已知存活数/(n−1)、存活占比、
-  t/t_max、in_domain、windup）+ 10 上刻动作 one-hot + 3 个最近已知存活非域文明×7
+- **观测（36 维）**：7 自身标量（log1p(tech)/log1p(50)、res/20、已知存活数/(n−1)、存活占比、
+  t/t_max、in_domain、windup）+ 8 上刻动作 one-hot + 3 个最近已知存活文明 × 7
   （Δx/50、Δy/50、d/50、log1p(tech) 或 −1、res/20 或 −1、public、in_domain 恒 0）；
-  死亡行整行清零；float32。
+  feature-major 布局（索引 15/18/21/24/27/30/33+k）；死亡行整行清零；float32；
+  **候选不足 3 时掩码行特征 = argsort 第 k 位文明的旗标（Q13，numpy-sort.ts 逐位复刻）**。
 - **驱动 API（两阶段 tick，无 step()）**：`select_targets(actions)` → `begin_tick(actions, targets)`
   （入侵者**当场**暴露给受害者）→ 受害者重选（人类玩家的关键交互点：被入侵时获得通知并重新决策；
   重选 INVADE=反咬互毁；重选 BLACK_DOMAIN 可当场取消入侵）→ `resolve(re_actions)`。
@@ -135,27 +141,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## AI 对手资产（完整规格见 docs/ai-opponents.md）
 
-- **DQN**：纯 numpy MLP **[38,64,64,10]**（ReLU 隐层、He 初始化、线性输出，float64）。
-  checkpoint（npz = 无压缩 ZIP 内嵌 .npy v1.0，小端 float64、C 序）键：
-  `online__W0/b0/W1/b1/W2/b2` + `updates`（主 checkpoint=149985）。
-  推理 = 前向 + 合法动作掩码 argmax（ε 探索同样只在合法动作内）；实验评测惯例 ε=0.05。
-  无独立编码函数——直接用 env 的 `_obs()/_valid()`。
-- **可用 checkpoint 共 12 个**（仅 v23_fix 系与现环境兼容）：主（600 回合自博弈）+ 11 个 sweep 臂
-  （base_control 0.669 / shield025 0.775 / shield075 0.613 / scale005 0.747 / scale02 0.612 /
-  budget100 0.683 / budget200 0.707 / lr3e4 0.618 / lr12e3 0.522 / gamma099 0.753 / gamma0999 0.580，
-  池存活为 2 世界×40 ep 相对口径）。⚠️ 档案内 v2.0–v2.2s 的 checkpoint 为 36 维 obs/8 动作
-  旧架构，与现环境不兼容，不可用。
-- **预制策略**（`experiment/experiment/train2.py:40-52`，各运行器共享同一实现）：
-  - `random`：合法动作均匀随机；
-  - `df`（黑暗森林启发式）：STRIKE 一合法即打 → 30% OBSERVE → 60% DEVELOP 否则 SILENT；
-    目标按 **stage_b 口径**：打击已知最强者（"诅咒领跑者"）、入侵最弱者；
+- **DQN**：纯 numpy MLP **[36,64,64,8]**（ReLU 隐层、He 初始化、线性输出，float64；维度自权重
+  推导）。checkpoint（npz = 无压缩 ZIP 内嵌 .npy v1.0）键：`online__W0/b0/W1/b1/W2/b2` +
+  `updates`（四臂均 149987）。推理 = 前向 + 合法动作掩码 argmax（ε 探索同样只在合法动作内）；
+  评测口径 ε=0.05（stage_b_v24）；参谋路径 `dqn.act` ε=0 零 RNG。
+- **可用 checkpoint 共 4 个**（仅 v2.4 奖励臂，`experiment/runs/v24_arms/<臂>/run/seed42_main/`）：
+  `a_classic`（无覆盖）/ `b_terminal`（soft 0、bd 0）/ `c_res`（+res 0.0025）/
+  `d_malintent`（c + attack 0.5）。⚠️ v2.3-fix 的 12 个（38 维 obs/10 动作）与档案内 v2.0–v2.2s
+  均不兼容，已从游戏对手目录退役。
+- **预制策略**（`experiment/experiment/train2_v24.py:40-52`，各运行器共享同一实现）：
+  - `random`：合法动作均匀随机（v2.4 合法集含揭露）；
+  - `df`：STRIKE 一合法即打 → 30% OBSERVE → 60% DEVELOP 否则 SILENT；目标按 **stage_b_v24 口径**：
+    INVADE 选候选最弱（安全猎杀）、其余目标动作选候选最强（"诅咒领跑者"）；
   - `pacifist`：50% DEVELOP 否则 SILENT，永不攻击。
-- **stage_b 口径**：36 槽 learner/random/df/pacifist 各 9（env seed 21001、agent seed 1001、
-  ε=0.05、150 ep）；存活率 = alive_ticks/(250−spawn_tick)。
-- **权威结论数字**（呈现对手强度时引用，须带单种子披露）：池存活 learner **0.627** > random 0.514 >
-  df 0.418 > pacifist 0.369；learner 训练全程 600 回合**零打击**（画像 SILENT 0.525/DEVELOP 0.464，
-  "科技竞速者"），牙齿仅用于入侵（0.19 次/回合，池中唯一有缴获者 loot 5.73）；df 5.2 打击/回合、
-  场均 15.7 杀但零缴获——"教科书式森林=自杀"（森林真点燃，先发打击仍净害）。
+- **stage_b_v24 口径**：36 槽 learner/random/df/pacifist 各 9（env seed 21001、agent seed 1001、
+  ε=0.05、150 ep）；分层变量 = **peak_tech**（earned tech；无继承后 spawn_tech 退化）。
+- **权威结论数字**（引用须带单种子 42 + 150ep 披露；v2.4 池生态反转）：pacifist 0.51–0.58 **四臂
+  全居首** > df 0.46–0.52 > learner 0.30–0.48（a 0.478 / b 0.342 / c 0.376 / d 0.296）> random
+  0.05–0.07；learner 全臂零打击（牙齿=揭露+入侵）：a 静默 0.62+种田 0.36；b 纯静默 0.82；c 掠夺流
+  入侵 11.1/ep loot 59.5；d 信息战揭露 0.181。earned-tech 分层 high 0.83–0.92 ≫ low 0.13–0.18
+  （发展优势从"出生特权"变为"努力回报"）。跨版本数字不可比（机制+参数双重变化）。
 
 ## 常用命令
 
@@ -165,22 +170,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -r experiment/experiment/requirements.txt     # numpy / pyyaml / matplotlib
 PYTHONUTF8=1 python3 experiment/experiment/tests/test_strike_fix.py   # 打击修复回归（脚本自行 chdir；实测 REGRESSION PASS）
 
-# v2.3-fix 复现（在 experiment/experiment/ 代码根执行；权威产物已存在，通常无需重跑）
-OMP_NUM_THREADS=1 PYTHONUTF8=1 python3 train2.py --seed 42 --mode main --out ../runs/v23_fix --config config_v23.yaml
-OMP_NUM_THREADS=1 PYTHONUTF8=1 python3 stage_b.py --run-dir ../runs/v23_fix/seed42_main --episodes 150 --out ../results/v23_fix --config config_v23.yaml
+# v2.4 复现（在 experiment/experiment/ 代码根执行；权威产物已存在，通常无需重跑）
+OMP_NUM_THREADS=1 PYTHONUTF8=1 python3 run_v24_arms.py    # 四臂幂等驱动（train + stage_b）
+PYTHONUTF8=1 python3 smoke_v24.py                           # v2.4 冒烟
+# v2.3-fix 历史链（env2.py/train2.py/stage_b.py）原样保留，勿在游戏侧引用
 # ⚠️ scripts/pipeline_v23_fix.sh 内含原沙箱硬编码绝对路径（/home/z/...），本机不可直接运行，仅作历史脚本
 
-# 游戏（仓库根，bun；已验证 2026-10-02）
+# 游戏（仓库根，bun；已验证 2026-10-11 v2.4 同步轮）
 bun run dev        # 开发服务器
 bun run build      # 生产构建（4 路由静态预渲染）
 bun run check      # typegen + eslint + tsc --noEmit（zh 词典完整性由 tsc 编译保证）
-bun test           # 全部测试（引擎一致性门 + 对手奇偶 + 会话/感知/门 parity；~600ms）
+bun test           # 全部测试（引擎金标准回放/argsort 矢量 + 对手奇偶 + 会话/感知/门 parity/奖励/配置；142 用例 ~800ms）
 
-# 金标准与模型资产的再生成（开发期 Python，只读引用 experiment/）
-PYTHONUTF8=1 python3 scripts/golden/record_golden.py        # 6 轨迹 + stats.json → src/lib/engine/testdata/
-python3 scripts/golden/convert_models.py                   # 12 npz → public/models/*.json（immutable 长缓存）
-python3 scripts/golden/record_dqn_outputs.py               # 12 模型前向奇偶数据 → testdata/dqn-outputs.json
-# 口径与容差披露见 src/lib/engine/testdata/README.md（含已捕获的 3 处移植缺陷历史记录）
+# 金标准与模型资产的再生成（开发期 Python，只读引用 experiment/ 的 *_v24 模块）
+PYTHONUTF8=1 python3 scripts/golden/record_golden.py        # 7 轨迹 + stats.json → src/lib/engine/testdata/
+python3 scripts/golden/convert_models.py                   # 4 臂 npz → public/models/*.json（immutable 长缓存）
+python3 scripts/golden/record_dqn_outputs.py               # 4 模型前向奇偶数据 → testdata/dqn-outputs.json
+# 轨迹自带 meta.cfg（奖励臂轨迹用其训练参数录制）；argsort 平局序矢量 = testdata/argsort-vectors.json
+# 口径与容差披露见 src/lib/engine/testdata/README.md（缺陷史 + Q13 掩码行伪影 + TS-only rewardDetail）
 ```
 
 ## 一致性验收（游戏环境 ⇄ 实验环境）
@@ -190,11 +197,12 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 1. **test_strike_fix 等价**：10 种子 × {击杀置死+死因=strike、守恒残差≈0、护盾比≥2 精确挡下}
    在 TS 中复现。
 2. **守恒不变量**：每刻 `总量 − Σ存活资源 − 自由池 ≡ 0`（|残差|≤1e-6），对局全程断言。
-3. **金标准回放**：用 Python 环境按固定种子录制"动作序列 → 事件流/状态"轨迹，TS 逐刻比对。
-   注意 numpy `default_rng` 为 PCG64 且消耗顺序数据依赖（位置拒绝采样次数可变）——逐位一致需
-   移植 PCG64 并完全复刻调用序；推荐退一步用"确定性脚本用例逐刻比对 + 多世界统计等价"双口径，
-   并在测试文档中写明口径。游戏运行时可用自身 RNG + 固定种子复现单局。
-4. **info 事件流**字段语义与 `env2.py` `resolve()` 返回完全一致（游戏 UI 以此渲染）。
+3. **金标准回放**（已落地）：`scripts/golden/record_golden.py` 录制 env2_v24 每次 RNG 调用 +
+   逐刻全状态快照（7 轨迹，含 d 臂奖励参数路径）→ TS `ReplayRng` 逐条断言消耗序后重演 →
+   全状态/obs/info/rewards 精确比对 + 守恒全程 + `assertExhausted`。**v2.4 增补**：近邻块 argsort
+   平局序逐位复刻（numpy-sort.ts + 2005 矢量）；轨迹 meta.cfg 自带 env 参数。游戏运行时用
+   自身 RNG（sfc32）+ 固定种子复现单局。
+4. **info 事件流**字段语义与 `env2_v24.py` `resolve()` 返回完全一致（游戏 UI 以此渲染）。
 5. 移植时的已知quirk清单见 `docs/env-model-v23.md` §0（含出生站位拒绝采样读取旧位置、
    广播者 known[j,j] 自知、近邻块 in_domain 特征恒 0 等——影响 obs 逐位一致，须照抄）。
 
@@ -202,8 +210,8 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 
 | 文档 | 内容 |
 |---|---|
-| `docs/env-model-v23.md` | v2.3-fix 环境完整移植规格（参数/状态/出生/动作/公式/结算顺序/观测/事件流/RNG 策略/回归锁定） |
-| `docs/ai-opponents.md` | DQN 推理移植 + 预制策略精确规则 + 12 个 checkpoint 清单与口径 |
+| `docs/env-model-v23.md` | **v2.4** 环境完整移植规格（已升版 2026-10-11：参数/状态/出生/动作/公式/结算顺序/观测/事件流/RNG 策略/Q13-Q14/四臂奖励）——文件名保留 v23 属历史命名 |
+| `docs/ai-opponents.md` | DQN 推理移植（36/8）+ 预制策略精确规则 + v2.4 四奖励臂清单与画像 |
 | `docs/game-mechanics.md` | **游戏机制阶段设计**（2026-10-01，v1.0）：模块架构（engine/opponents/solo 分层）、Rng 接口（uniform/choice）+ 录制-回放金标准、5 点验收门的测试落地、模型预转换 JSON 管线、单机会话层（座位分配/玩家出生/逐刻循环）、**玩家感知过滤规则表**（严格忠实口径）、里程碑 M1-M5。做引擎/对手/会话任何工作前先读它 |
 | `DESIGN.md`（v0.2 已建） | UI 设计系统：方向/原则/令牌（v0.1）+ 双语词汇表 §7 + 组件规格 §10 + 五屏线框 §11 + i18n 规范 §12（无手动语言开关）+ 时序模型 §13（单机每刻暂停 / 在线定时刻长）。**写任何 HTML 前须先经它** |
 | `experiment/README.md`、`experiment/INDEX.md` | 实验总览与目录地图 |
@@ -212,33 +220,40 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 
 ## 开发顺序（项目路线）
 
-1. 环境移植 + 一致性验收（**已完成 2026-10-02**：TS 引擎 `src/lib/engine/`，验收门 1-5 全绿——
-   strike-fix 10 种子等价、守恒全程、**录制-回放金标准 6 轨迹逐刻精确比对**、info 逐字段、
-   Q1-Q12 锁定 + 统计第二口径；口径披露 `src/lib/engine/testdata/README.md`）→
-2. `DESIGN.md`（**v0.2 已完成 2026-09-30**，含 §13 时序模型：单机每刻暂停回合制 /
-   在线 20s 定时刻、未提交默认静默）→ 3. HTML 原型（**已完成 2026-09-30**：五屏静态 mock +
-   双语 i18n）→ 4. 对手接入（**已完成 2026-10-02**：DQN 推理 12 模型前向奇偶 |ΔQ|≤1e-9 +
-   预制策略 stage_b 口径 + 单机会话层与感知过滤，`/solo`→`/match` 端到端可玩，demo bar 已移除）→
+1. 环境移植 + 一致性验收（**已完成 2026-10-02**：TS 引擎，验收门 1-5 全绿）→
+   **v2.4 同步（2026-10-11 完成）**：env2_v24 移植（8 动作/36 obs/揭露/无继承/奖励臂）+
+   金标准 7 轨迹重录 + numpy argsort 逐位移植（Q13）+ 对手层 4 臂 + 单机层 cfg 注入/
+   奖励展示/模型参谋/配置面板（用户 2026-10-10 需求）→
+2. `DESIGN.md`（v0.2 完成 2026-09-30；2026-10-09/10-10 UX 轮 + v2.4 词汇/组件规格增补）→
+   3. HTML 原型（**已完成 2026-09-30**）→ 4. 对手接入（**已完成 2026-10-02**；v2.4 化 2026-10-11：
+   DQN 4 臂前向奇偶 + 预制 8 动作集 + 单机会话与感知过滤含揭露规则⑫）→
 5. 在线模式（排队/共享世界/轮询或 SSE，模式 b；`/online` 仍为 mock 大厅）→
 6. Vercel 部署与缓存策略（`/models/*` immutable 头已就位）。
 每阶段完成后更新 CLAUDE.md 的命令与状态。
 
-落地备忘（2026-09-30 原型阶段；2026-10-02 机制阶段更新）：
+落地备忘（2026-09-30 原型阶段；2026-10-02 机制阶段；2026-10-11 v2.4 同步轮更新）：
 
-- **游戏机制分层**（docs/game-mechanics.md §1）：`src/lib/engine/`（纯 TS 环境，零 React）→
-  `src/lib/opponents/`（dqn.ts 前向+actBatch / presets.ts / catalog.ts）→ `src/lib/solo/`
-  （match.ts 会话状态机 + view.ts 感知过滤 + gates.ts 门理由 + client.ts 装配）。
+- **游戏机制分层**（docs/game-mechanics.md §1）：`src/lib/engine/`（纯 TS 环境，零 React；
+  numpy-sort.ts = argsort 逐位移植）→ `src/lib/opponents/`（dqn.ts 前向+actBatch+act /
+  presets.ts / catalog.ts 合并目录）→ `src/lib/solo/`（match.ts 会话状态机 + view.ts 感知过滤 +
+  rewards.ts 奖励组合 + cfg-io.ts 配置 IO + gates.ts 门理由 + client.ts 装配）。
   **Rng 为构造期注入**（env 不持有种子）：GameRng=运行时 sfc32、ScriptedRng=单测脚本值
   （原样返回，非缩放）、ReplayRng=金标准回放。种子派生 `seedOf(S, domain)`（splitmix64）：
   domain ∈ "env" / "session"（预制共享流，stage_b 口径）/ "model:" + arm。
   座位约定：初始 4 席 = 对手光标 0..3；**首个内生出生 = 玩家**（出生序 4）；此后继续光标循环。
 - **UI 只可消费 view.ts 视图模型**（MatchView）：感知过滤（严格忠实口径，规则表 game-mechanics.md
-  §7——他人间交锋/被观测反曝光/被打击幸存均不渲染）在 ViewTracker 内完成，**组件层禁止直读
+  §7——他人间交锋/被观测反曝光/被打击幸存/**被揭露**均不渲染，规则①-⑫）在 ViewTracker 内完成，**组件层禁止直读
   env/SoloMatch**。ViewTracker 契约：每刻至少一次 update()。日志 `params.cause` 携带 cause.* 键名，
   由 EventLog 嵌套翻译。
-- **模型资产**：`public/models/<arm>.json`（12 个，npz 预转换，Python float repr↔JSON.parse 逐位
-  往返），next.config 已挂 `Cache-Control: public, max-age=31536000, immutable`。运行时按需 fetch。
-  `/match?op=<逗号分隔 id>`（preset+model），非法参数/加载失败 → replace /solo。
+- **模型资产**：`public/models/<arm>.json`（**v2.4 四臂**：a_classic/b_terminal/c_res/d_malintent，
+  npz 预转换，Python float repr↔JSON.parse 逐位往返），next.config 已挂 immutable 长缓存，运行时
+  按需 fetch。`/match?op=<逗号分隔 id>`（预制 3 + 臂 4 **合并单一列表**，2026-10-10 用户修订——
+  对手卡内联动作画像、无 popover、无胜率），非法参数/加载失败 → replace /solo。
+- **环境配置（2026-10-10 用户需求）**：`/solo` 开局前可配置世界常量（`cfg-io.ts` 精选 25 参数 +
+  出生科技；默认恒 = config_v24，改动即明示偏离）；差集经 sessionStorage 传递，读取端钳制 +
+  忽略未知键；SoloMatch 构造注入 cfg。**奖励展示**（配置流 + 四臂固定参数对比）与**模型参谋**
+  （四臂 greedy 零 RNG；用过即终局披露）走 `TickResult.rewardDetail`（TS-only 诊断，不进 info、
+  不参与 parity）与 `dqn.act`；机制见 game-mechanics.md §7.1。
 - useSearchParams 必须包 Suspense 外壳（Next 16 预渲染；/match 的 MatchConsole 模式）。
 - 组件层标记类型 = **CivLike**（marker.tsx 定义）：MockCiv 已退役，mock.ts 只剩 /online 大厅
   与 legend-hero 标本。

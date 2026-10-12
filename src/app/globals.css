@@ -198,29 +198,34 @@ body {
    once in client-layout.tsx) backfills older browsers, including the auto
    rule that only one popover may be open document-wide.
 
+   /solo opponent cards dropped their popover (2026-10-10: click-to-select
+   conflicted with click-to-pin) — details are inline on the card now. The
+   anchored-panel class below serves the /match auxiliary buttons (reward ·
+   advice); marker popovers are separate (.marker-popover).
+
    Anchoring (overflow prevention, all in CSS):
-   - baseline — wrapper-relative absolute below the card, works everywhere;
+   - baseline — wrapper-relative absolute below the button, works everywhere;
      the top layer already escapes ancestor clipping while shown.
    - browsers with CSS anchor positioning switch to fixed + position-area
      with position-try-fallbacks, flipping the panel on overflow.
-   - on top of both, opponent-card injects a `translate` on open whenever
-     the rendered panel still leaks past the viewport (belt and braces). */
+   - on top of both, clampPopoverIntoViewport injects a `translate` on open
+     whenever the rendered panel still leaks past the viewport. */
 
-.opp-popover {
+.aux-popover {
     position: absolute;
     top: calc(100% + 4px);
-    left: 0;
+    right: 0;
     width: max-content;
     max-width: min(20rem, calc(100vw - 1rem));
     margin: 0;
 }
 
 @supports (anchor-name: --a) and (position-area: block-end) {
-    .opp-popover {
+    .aux-popover {
         position: fixed;
         inset: auto;
         margin: 4px;
-        position-area: block-end span-inline-start;
+        position-area: block-end span-inline-end;
         position-try-fallbacks: flip-block, flip-inline;
     }
 }

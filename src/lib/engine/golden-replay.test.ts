@@ -8,7 +8,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { V23_CONFIG } from "./config";
+import type { EnvConfig } from "./config";
 import { DarkForestEnv2 } from "./env";
 import { ReplayRng } from "./rng";
 import { assertConservation, compareState, snapshot } from "./snapshot";
@@ -17,6 +17,7 @@ import { applyPatch, decodeObs, expectDeepClose, loadTrace } from "./testdata-io
 const TRACES = [
     "trace-main-s1",
     "trace-main-s2",
+    "trace-main-d",
     "trace-tgt-mutual",
     "trace-tgt-shield",
     "trace-tgt-windup",
@@ -27,7 +28,8 @@ for (const name of TRACES) {
     test(`golden replay: ${name}`, () => {
         const tr = loadTrace(name);
         const rng = new ReplayRng(tr.rngLog);
-        const env = new DarkForestEnv2(V23_CONFIG, rng);
+        // v2.4：轨迹自带完整 env 参数（奖励臂轨迹用其训练 config 录制）
+        const env = new DarkForestEnv2(tr.meta.cfg as EnvConfig, rng);
         env.reset();
         if (tr.reset.patch) applyPatch(env, tr.reset.patch);
 

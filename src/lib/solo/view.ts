@@ -18,9 +18,18 @@
  * 日志条目约定：`params.cause` 携带 cause.* 键名，由 EventLog 嵌套翻译。
  */
 import type { MessageKey, TParams } from "@/i18n";
-import { A_BSELF } from "@/lib/engine/types";
+import { A_BALL, A_BOTHER, N_ACTIONS } from "@/lib/engine/types";
 import { relativeDelta } from "./camera";
 import type { EndView, Phase, SoloMatch } from "./match";
+import {
+    ARM_IDS,
+    addIngredients,
+    armParamsOf,
+    emptyIngredients,
+    partsOf,
+    rewardOf,
+    type RewardIngredients,
+} from "./rewards";
 
 export interface MarkerView {
     id: number;
@@ -38,6 +47,18 @@ export interface LogEntryView {
     params?: TParams;
 }
 
+/** 奖励展示（用户 2026-10-10 口径：配置流 + 四臂对比）——出生前为 null */
+export interface RewardView {
+    /** 当前配置累计（Σ 引擎 rewards[p]，精确） */
+    total: number;
+    /** 当前配置本刻增量 */
+    lastTick: number;
+    /** 当前配置下的累计分量明细 */
+    parts: { stipend: number; res: number; bounty: number; bdEntry: number; death: number };
+    /** v2.4 四臂累计对比（固定臂参数，与开局配置无关） */
+    arms: { id: string; total: number }[];
+}
+
 export interface MatchView {
     phase: Phase;
     tick: number;
@@ -48,10 +69,16 @@ export interface MatchView {
     markers: MarkerView[];
     /** 玩家本刻合法动作（env valid 行） */
     valid: boolean[];
-    /** 目标候选（selectTargets 玩家行；STRIKE/INVADE 共用） */
+    /** 目标候选（selectTargets 玩家行；四目标动作共用） */
     targetCandidates: number[];
     invasion: { invaderId: number } | null;
     end: EndView | null;
+    /** 奖励展示（未生 null） */
+    reward: RewardView | null;
+    /** 自身面板读数域 + 行动门理由（配置注入后与 V24_CONFIG 可能不同——读 env.cfg） */
+    panel: { gateObserveTech: number; gateStrikeTech: number; resMax: number };
+    /** 会话环境配置（供行动格门理由/入侵模态理由读真实门槛） */
+    cfg: import("@/lib/engine/config").EnvConfig;
     /** 累计日志快照（tracker.getLog()） */
     log: LogEntryView[];
 }
@@ -75,6 +102,10 @@ export class ViewTracker {
     private invadedLogged = false;
     private lastInvader: number | null = null;
     private deathLogged = false;
+    /** 奖励累计（玩家；配置流 total + 原料） */
+    private cumReward = 0;
+    private lastTickReward = 0;
+    private cumIng: RewardIngredients = emptyIngredients();
 
     constructor(private readonly m: SoloMatch) {}
 
@@ -113,7 +144,7 @@ export class ViewTracker {
         // ---- 视图装配（当前状态直读） ----
         const p = m.playerSlot;
         let markers: MarkerView[] = [];
-        let valid: boolean[] = new Array(10).fill(false);
+        let valid: boolean[] = new Array(N_ACTIONS).fill(false);
         const targetCandidates: number[] = [];
         if (p === null) {
             markers = [{ id: -1, x: 50, y: 50, state: "queued" }];
@@ -139,7 +170,7 @@ export class ViewTracker {
                         ? "observed"
                         : "known";
                 // 域内者：封存快照（活值 = 泄漏，评审 Important 1）；观测者：live 值——
-                // env 语义即 observed 置位后近邻块逐刻喂 tech[order]/res[order] 当前值（env2.py:317-318）
+                // env 语义即 observed 置位后近邻块逐刻喂 tech[order]/res[order] 当前值
                 const frozen = isDomain ? this.frozenIntel.get(j) : undefined;
                 const hasLiveIntel = !isDomain && env.observed[p * n + j] === 1;
                 markers.push({
@@ -151,10 +182,10 @@ export class ViewTracker {
                     res: frozen !== undefined ? frozen.res : hasLiveIntel ? env.res[j] : undefined,
                 });
             }
-            const vRow = env.valid().subarray(p * 10, (p + 1) * 10);
+            const vRow = env.valid().subarray(p * N_ACTIONS, (p + 1) * N_ACTIONS);
             valid = [...vRow].map((x) => x === 1);
             const probe = new Int32Array(n);
-            probe[p] = 4; // STRIKE（候选掩码与 INVADE 同）
+            probe[p] = 4; // STRIKE（候选掩码与四目标动作同——env2_v24.py:350-356）
             const mask = env.selectTargets(probe);
             for (let j = 0; j < n; j++) if (mask[p * n + j]) targetCandidates.push(j);
         }
@@ -180,6 +211,22 @@ export class ViewTracker {
             targetCandidates,
             invasion: m.phase === "awaiting-rechoice" ? { invaderId: m.getPendingInvader() ?? 0 } : null,
             end: m.getEnd(),
+            // 奖励展示（未生 null）：配置流（精确引擎值）+ 四臂（原料 × 固定臂参数）
+            reward:
+                p === null
+                    ? null
+                    : {
+                          total: this.cumReward,
+                          lastTick: this.lastTickReward,
+                          parts: partsOf(this.cumIng, env.cfg),
+                          arms: ARM_IDS.map((id) => ({ id, total: rewardOf(this.cumIng, armParamsOf(id)) })),
+                      },
+            panel: {
+                gateObserveTech: env.cfg.gateObserveTech,
+                gateStrikeTech: env.cfg.gateStrikeTech,
+                resMax: env.cfg.resMax,
+            },
+            cfg: env.cfg,
             // 快照拷贝：React Compiler 缓存元素，同一数组引用会让 memo 化的 EventLog
             // 永不重渲染（用户手测回归 2026-10-08——日志冻结在出生消息）
             log: [...this.log],
@@ -203,6 +250,11 @@ export class ViewTracker {
 
         if (p === null) return; // 未生：无知识图可 diff
 
+        // 奖励累计（配置流 total 用引擎精确值；原料供四臂/分量组合）
+        this.lastTickReward = r.rewards[p];
+        this.cumReward += r.rewards[p];
+        addIngredients(this.cumIng, r.rewardDetail, r.deadNow, p);
+
         // ① 自有动作结果
         for (const ev of r.info.strike_events) {
             if (ev[0] !== p) continue; // ⑦⑨：他人/受害侧不渲染
@@ -217,7 +269,19 @@ export class ViewTracker {
                     loot: r.info.loot_to[p].toFixed(1),
                 });
         }
-        if (env.last_action[p] === A_BSELF) this.emit(tick, "log.ownBroadcast");
+        if (env.last_action[p] === A_BALL) this.emit(tick, "log.ownBroadcast");
+        // ①(v2.4) 揭露成功（last_action=BOTHER 且揭露确实入队——阶段 3 可能静默拦下：
+        // 目标在锁定后、入队前转入 in_domain（阶段 0 域激活先于阶段 3）。虚报=感知失真，
+        // 以 pending_reveal 的实际入队为准（评审修复 2026-10-12））。
+        if (env.last_action[p] === A_BOTHER) {
+            const j = env._targets.get(p);
+            if (
+                j !== undefined &&
+                env.pending_reveal.some((e) => e[0] === "other" && e[1] === j)
+            ) {
+                this.emit(tick, "log.ownReveal", { id: j });
+            }
+        }
 
         // ③④ 已知增量（自身 known 行 diff；公开路径 → broadcast，否则 → contact）
         const knownNow = new Set<number>();

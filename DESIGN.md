@@ -166,23 +166,24 @@
 仪器报告语气：陈述句、不用叹号、不卖弄；两种语言同此。动作按钮 = 实验动作动词的原样。
 本表即 i18n 字典的种子内容（规范见 §12）：
 
-**动作按钮**（9 个，恰好 3×3，见 §10.4）：
+**动作按钮**（v2.4 起 8 个，4×2，见 §10.4——删打击最弱/最强（按未观测科技排序=观测前
+作弊），BROADCAST_SELF 改名 BROADCAST_ALL（语义同），新增「揭露」= BROADCAST_OTHER：
 
 | 键 | 中文 | English |
 |---|---|---|
 | `actions.silent` | 静默 | Silent |
 | `actions.develop` | 发展 | Develop |
 | `actions.broadcast` | 广播 | Broadcast |
+| `actions.reveal` | 揭露 | Reveal |
 | `actions.observe` | 观测 | Observe |
 | `actions.domain` | 黑域 | Black Domain |
-| `actions.strike` | 打击 | Strike |
-| `actions.strikeWeak` | 打击·最弱 | Strike Weakest |
-| `actions.strikeStrong` | 打击·最强 | Strike Strongest |
 | `actions.invade` | 入侵 | Invade |
+| `actions.strike` | 打击 | Strike |
 
-按钮下代价说明例（`text-xs dim`，两行内）：`观测：获知最近已知者的科技与资源；下刻你会被
-随机文明发现` / `Observe: learn the nearest known civ's tech & res; a random civ detects you
-next tick`。
+按钮下代价说明例（`text-xs dim`，两行内）：`观测：获所选（或最近已知）文明的科技与资源；
+下刻随机文明会发现你` / `Observe: learn the chosen (or nearest known) civ's tech & res;
+a random civ detects you next tick`；`揭露：公开已知目标的坐标；你自己不暴露` /
+`Reveal: publish a known target's coordinates; you stay hidden`。
 
 **日志句式**（`[041]` + 陈述，双侧同构；感知过滤口径见 docs/game-mechanics.md §7——
 仅渲染玩家可知事件：自有动作结果、环境显式通知、自身探测/知识图变化；他人间交锋不可见）：
@@ -198,6 +199,7 @@ next tick`。
 | `[048] 你的打击未命中 #9` | `[048] Your strike missed #9` |
 | `[049] 你入侵了 #9，缴获 5.2` | `[049] You invaded #9, looted 5.2` |
 | `[050] 你广播了坐标，下刻向全体公开` | `[050] You broadcast — public to all next tick` |
+| `[050] 你揭露了 #9——下刻起全体可见` | `[050] You revealed #9 — public to all next tick` |
 | `[051] 一个新文明诞生了` | `[051] A new civilization is born` |
 | `[052] 已知信号消失` | `[052] A known contact went dark` |
 | `[053] 你的文明诞生了` | `[053] Your civilization is born` |
@@ -205,11 +207,73 @@ next tick`。
 | `[112] 你死了。死因：饿死。存活 111 刻。` | `[112] You are dead. Cause: starvation. Survived 111 ticks.` |
 
 诞生事件**情报-free**（感知过滤规则⑩：出生不给 #id/资源）；护盾句仅当玩家为打击者（规则①；
-被打击而幸存无通知，规则⑨）。目标选择条补充：`不选目标，打击最近已知` /
-`Skip targeting — strike nearest known`。行动执行按钮（2026-10-09，模型 B）：`执行 · 下一刻` /
-`Execute · next tick`。终局第三态：`你未及诞生` / `You were never born`、
+被打击而幸存无通知，规则⑨）。**揭露句**（v2.4 规则①/⑫）：自己揭露成功 → `[050] 你揭露了
+#9`；**被他人揭露零感知**（环境无通知机制——玩家不知道自己已公开）；他人揭露第三方在玩家
+视角与"该文明自曝"完全同形（规则④ broadcast 句）——归因歧义是机制真相，借刀杀人不可归因。
+目标选择条补充：`跳过选目标——取最近已知` / `Skip targeting — take the nearest known`
+（打击/观测共有）。行动执行按钮（2026-10-09，模型 B）：`执行 · 下一刻` /
+`Execute · next tick`。终局存活句（v2.4 配置轮参数化刻长）：`{t} 刻 · 终局存活 {n} 名文明` / `{t} ticks · {n} civilizations alive at the end`（此前硬编码 250——tMax 可配置后失真，评审修复 2026-10-12）。终局第三态：`你未及诞生` / `You were never born`、
 `世界在你出生前归于热寂。` / `The world fell silent before your birth.`。装载态：
 `正在装载对手模型…` / `Loading opponent models…`。
+
+**奖励展示**（2026-10-10 用户需求，v2.4 奖励臂；按钮 + 浮层，见 §10.12）：
+
+| 键 | 中文 | English |
+|---|---|---|
+| `match.reward` | 奖励 | Reward |
+| `match.reward.total` | 累计 | Total |
+| `match.reward.last` | 本刻 | This tick |
+| `match.reward.stipend` | 发展津贴 | Development stipend |
+| `match.reward.res` | 资源津贴 | Resource stipend |
+| `match.reward.bounty` | 攻击赏金 | Attack bounty |
+| `match.reward.bd` | 黑域罚 | Domain penalty |
+| `match.reward.death` | 死亡罚 | Death penalty |
+| `match.reward.arms` | 四臂口径 | Reward-arm comparison |
+| `match.reward.note` | 奖励参数不影响对手模型行为。 | Reward settings do not affect opponent models. |
+
+**模型参谋**（2026-10-10 用户需求；按钮 + 浮层，见 §10.13——用过即于终局披露）：
+
+| 键 | 中文 | English |
+|---|---|---|
+| `match.advisor` | 参谋 | Advice |
+| `match.advisor.title` | 四臂模型在此步的选择 | The four arms' choices at this step |
+| `end.advisorUsed` | 本局使用过模型参谋 | Model advice was used this run |
+
+**对手选择**（2026-10-10 用户需求：合并单一列表 + 内联详情 + 动作画像；见 §10.10）：
+
+| 键 | 中文 | English |
+|---|---|---|
+| `solo.opponents` | 选择对手 | Choose your opponents |
+| `opp.arm.a_classic.desc` | 隐匿种田为主（静默 0.62 · 发展 0.36），偶发入侵收割 | Mostly silent development (silent 0.62 · develop 0.36), occasional invasion harvesting |
+| `opp.arm.b_terminal.desc` | 近乎全程静默（0.82）——唯一信号是死亡本身 | Nearly always silent (0.82) — the only signal is death itself |
+| `opp.arm.c_res.desc` | 掠夺流：高频入侵收割，以缴获为生 | Plunderer: constant invasion harvesting, lives on loot |
+| `opp.arm.d_malintent.desc` | 信息战：揭露他人坐标（0.18）+ 中频入侵——借刀杀人 | Info-war: reveals others' coordinates (0.18) + steady invasions — the borrowed knife |
+
+`opp.df.desc` 数字更新为 v2.4 口径（14.5 杀/回合、零缴获）。画像源自 150 回合混战池
+（单训练种子 42），以 `solo.disclosure` 披露；胜率数字从对手卡**移除**（用户裁定：原
+罗列胜率有误导性）。
+
+**世界常量配置**（2026-10-10 用户需求；面板见 §10.14——精选 25 参数 + 出生科技旋钮）：
+
+| 键 | 中文 | English |
+|---|---|---|
+| `solo.config` | 世界常量 | World constants |
+| `solo.config.g.clock` | 时长 | Clock |
+| `solo.config.g.detect` | 探测 | Detection |
+| `solo.config.g.econ` | 经济 | Economy |
+| `solo.config.g.tech` | 科技 | Technology |
+| `solo.config.g.force` | 武力 | Force |
+| `solo.config.g.gates` | 门槛 | Gates |
+| `solo.config.g.reward` | 奖励 | Rewards |
+| `solo.config.armPresets` | 奖励臂预设 | Reward-arm presets |
+| `solo.config.default` | 默认 | Default |
+| `solo.config.reset` | 恢复默认 | Reset to defaults |
+| `solo.config.deviation` | 默认即实验参数；任何改动都是对实验的明示偏离。 | Defaults mirror the experiment; any change is a declared deviation. |
+| `solo.config.rewardNote` | 奖励参数只改变你的奖励数值，不影响对手模型行为。 | Reward settings change only your reward numbers — opponent models are frozen policies. |
+| `solo.config.dirty` | 已改 {n} 项 | {n} modified |
+
+参数字段标签 = 参数名 mono 读数（`tMax`、`pDetectBase`…——技术记号属数据展示非文案，
+同对手卡 arm id 先例）；每字段带默认值对照（mono dim）。
 
 **数字格式**（不本地化，mono 固定）：刻 `041/250`（三位补零）；概率 `62%`；科技/资源/池
 `1 位小数`；**坐标 = 相对自身的环面差**（有符号整数，如 `+12/−8`，与相机居中的星图同构——
@@ -233,9 +297,11 @@ stay silent and wait for signals`。
 │        世界星图 1:1            │   科技 7.4 ▓▓▓▓░░ +门槛刻度   │
 │        void 底 + 星尘(静止)    │   资源 12.5 ▓▓░░░            │
 │        认知阶梯标记            ├──────────────────────────────┤
-│        探测半径虚线环           │ 行动面板：3×3 动作格          │
-│                               │  静默 发展 广播 观测 黑域      │
-│                               │  打击 打击·最弱 打击·最强 入侵 │
+│        探测半径虚线环           │ [奖励] [参谋] 辅助浮层钮      │
+│                               ├──────────────────────────────┤
+│                               │ 行动面板：4×2 动作格          │
+│                               │  静默 发展 广播 揭露           │
+│                               │  观测 黑域 入侵 打击           │
 ├───────────────────────────────┴──────────────────────────────┤
 │ 事件日志（mono 流，aria-live=polite，新行 log-in）            │
 └──────────────────────────────────────────────────────────────┘
@@ -295,28 +361,28 @@ i18n 规范见 §12——HTML 原型以 §9–§12 为完整依据。
 - 资源条：域 0–20（res_max），填充 `resource`。
 - 域内态：面板边框转 `domain`，附注 `黑域生效 · 不可逆`。
 
-### 10.4 行动格 `action-grid`（3×3，按"存在 → 情报/庇护/掠夺 → 暴力"分行——暴力独占末行，呼应红色稀缺）
+### 10.4 行动格 `action-grid`（v2.4 起 4×2 两行——用户 2026-10-10 选定；行 1 存续·广播，行 2 情报·庇护·暴力）
 
 ```
-静默     发展     广播      ← 存在方式
-观测     黑域     入侵      ← 情报 · 庇护 · 掠夺
-打击     打击·最弱 打击·最强  ← 暴力
+静默     发展     广播     揭露     ← 存续 · 广播
+观测     黑域     入侵     打击     ← 情报 · 庇护 · 暴力
 ```
 
 - 按钮：动作名 text-sm 700 + 代价说明 text-xs dim；桌面 `min-h-16`、触控 `min-h-11`。
 - **选择模型 B**（2026-10-09 用户确认）：行动格全部只「选择」不执行；格下全宽
   **执行 · 下一刻**按钮是唯一提交入口。
   - **姿态**（静默/发展）：点击即设定，跨刻持久保留（稳态每刻仅按一次执行）——
-    姿态钮持续 `border-self bg-raised text-self` 高亮（待执行/武装期间暂隐——单一信号原则，
+    姿势钮持续 `border-self bg-raised text-self` 高亮（待执行/武装期间暂隐——单一信号原则，
     pending 清空后回归）；
-  - **一次性动作**（其余 7 个）：点击进入待执行（pending）态，钮转 `border-lethal`；执行后
+  - **一次性动作**（其余 6 个）：点击进入待执行（pending）态，钮转 `border-lethal`；执行后
     回退到姿态高亮（"tick 结束后回退到选择前的静默/发展"）；
   - **执行按钮副行**显示将执行的动作：pending 时为该动作名（目标已选追加 ` #编号`），
     否则为当前姿态名——开火前最后确认；
-  - 目标选择（打击/入侵）仍是 pending 的武装子模式：armed 期间执行禁用，须选中目标或取消。
-- 禁用：`opacity-40` + 原因（例 `科技不足（需 >7.0）`）。
-- **目标选择模式**：点打击/入侵 → 该钮转 `border-lethal`（armed），星图标记进入可选态，
-  顶读数区显示 `选择目标` + `取消`；ESC 或取消退出；选中目标即成 pending、退出武装。
+  - **目标选择武装**（v2.4 扩为四动作）：打击/入侵/揭露/观测点击即武装（armed），星图标记
+    进入可选态；armed 期间执行禁用，须选中目标或取消。观测与打击有**最近已知兜底**——
+    武装条附 `跳过选目标——取最近已知`；**入侵与揭露必须显式目标**（入侵必杀须指向；
+    揭露无目标=无揭露）。
+- 禁用：`opacity-40` + 原因（例 `科技不足（需 >7.0）`；揭露走广播门 `需科技 >1 或资源 >10`）。
 
 ### 10.5 日志 `event-log`
 `role="log" aria-live="polite"`，高 ≈160px `overflow-y-auto`（细滚动条 strong/panel）。
@@ -364,38 +430,70 @@ i18n 规范见 §12——HTML 原型以 §9–§12 为完整依据。
 黑域（紫封盘）+ `死亡：从星图消失，只留在日志`（text-xs faint 注脚）。每格 = 真实标记组件 +
 状态名 text-sm + 一句说明 text-xs dim。既是视觉锚点，也是这个游戏唯一需要先学会的东西。
 
-### 10.10 对手卡 `opponent-card`
-名称（text-sm 700，如 `科技竞速者 · main`）+ 参数行（text-xs mono dim，如 `600ep · seed 42`）+
-风格一句（text-xs dim）；hover 升边；列表页脚注**单训练种子披露**（数字为相对口径）。
-预制策略四风格：科技竞速者（learner·主）/ 均匀随机（random）/ 黑暗森林教科书（df·打击最强者）/
-和平主义（pacifist）。
+### 10.10 对手卡 `opponent-card`（2026-10-10 用户修订：**内联详情，无浮层**）
+名称（text-sm 700——预制 = 风格名 i18n；模型 = 臂 id mono 技术记号）+ meta 行（text-xs mono
+dim，`600ep · seed 42`）+ 奖励参数行（text-xs mono dim，如 `soft 0.01 · bd 0.5 · +attack 0.5`）
++ **动作画像一句**（text-xs dim prose，i18n `opp.arm.<id>.desc`）。点击 = 选中/取消选择（同原
+交互），**不再开 popover**（浮层点击与选择点击冲突——用户裁定弃用）；hover 仅升边。
+预制策略与 v2.4 四臂**合并单一列表**（原"预制/模型"分节有误导性）：序 = 预制 3 → 臂 4，
+默认选 `a_classic`。脚注 = 单训练种子披露；**胜率数字移除**（误导性），详情只概括动作画像。
 
 ### 10.11 排队卡 `queue-card`（在线大厅）
 `#3`（text-xl ink）+ `无需账号 · 排队即入场`（dim）+ 世界读数（刻/存活/池）+ 幽灵标记迷你星图
 （`faint` 虚线圆）+ `取消排队`（普通钮）。
+
+### 10.12 奖励浮层 `reward-panel`（2026-10-10 用户需求：按钮 + popover）
+右列顶部辅助钮行：`奖励`（text-xs，border-subtle；未出生禁用）。点击开 popover
+（`popover="auto"`，锚定式摆放——同对手卡原机制 `clampPopoverIntoViewport`）：
+- **当前配置流**（主区块）：`累计 +3.47`（text-base tnum）+ `本刻 +0.03`（text-xs dim）+
+  分量明细五行（标签 text-xs dim + 数值 text-xs tnum：发展津贴/资源津贴/攻击赏金/黑域罚/死亡罚）；
+- **四臂口径对比**（副区块）：a_classic / b_terminal / c_res / d_malintent 四行累计
+  （mono 臂 id + tnum 数值）——固定臂参数，与开局配置无关（"如果我是该模型，我会得到什么信号"）；
+- 尾注：`奖励参数不影响对手模型行为。`（text-xs faint）。
+数值全为 mono 定点两位小数（`+3.47`，负号保留）；奖励纯为对局理解辅助，不影响任何机制。
+
+### 10.13 模型参谋 `advisor`（2026-10-10 用户需求：按钮 + popover + 终局披露）
+辅助钮行第二钮：`参谋`。点击拉取四臂权重（懒加载缓存）对**玩家当前 obs/valid 行**做
+greedy argmax（ε=0，不消耗会话随机流——与对局推进完全隔离），popover 列四行：
+`a_classic → 静默`（mono 臂 id + 动作名 i18n）。目标型动作只显示动作名（目标选择属玩家）。
+**用过即置 advised**——终局卡片（§10.8）附一行 `本局使用过模型参谋`（text-xs dim）：
+这是诚实披露标记（AI 辅助 = 非独立生存）。未出生禁用。
+
+### 10.14 世界常量面板 `config-panel`（2026-10-10 用户需求：开局前可配置）
+/solo 页对手列表下方的可折叠面板（默认折叠；标题行右侧 = `已改 {n} 项` 徽标，n>0 才显示）：
+- 分组七节（§7 键）：时长/探测/经济/科技/武力/门槛/奖励——每字段一行：参数名（text-xs mono
+  ink）+ number 输入（text-xs tnum，mono）+ 默认值（text-xs mono dim，如 `250`）；失焦钳回
+  字段范围（cfg-io 的 25 精选参数；出生科技 = 单旋钮写 techSpawnLo=Hi，默认 1.0）；
+- 奖励节头部附**奖励臂预设**四钮（默认/a/b/c/d mono 短标签——设五参数）+ `恢复默认`；
+- 两条披露常驻面板脚注：`默认即实验参数…明示偏离` + `奖励参数…不影响对手模型行为`；
+- 开始对局时差集序列化写 sessionStorage（`df.env-cfg`），/match 读取（缺省/损坏 = 默认）。
 
 ## 11. 五屏线框
 
 ```
 / 首页                              /solo 对手选择
 ┌──────────────────────────────┐  ┌──────────────────────────────┐
-│ 黑暗森林 DARK FOREST          │  │ ← 返回  对手选择              │
+│ 黑暗森林 DARK FOREST          │  │ ← 返回  选择对手              │
 │                              │  │                              │
-│ ┌──────────────────────────┐ │  │ 预制策略                     │
-│ │ 图例 hero（五态标记实样） │ │  │ [科技竞速者][random][df]     │
-│ └──────────────────────────┘ │  │ [pacifist]                   │
-│ 你是一个文明，在某个文明产生  │  │ 已训练模型（12）             │
-│ 时出生。目标：活到第 250 刻。│  │ [main][base_control][shield025]│
-│ （sans 导语）                │  │ [shield075][scale005]… 4×3    │
-│ ┌───────────┐ ┌───────────┐ │  │ 单种子披露脚注               │
-│ │ 与智能博弈 │ │ 在线排队   │ │  │ ┌──────────────────────────┐ │
-│ │ (self 主钮)│ │ 入场       │ │  │ │ 池型 mock                │ │
-│ └───────────┘ └───────────┘ │  │ └──────────────────────────┘ │
-│ 规则速览（sans：公理/动作/经济）│  │ [开始对局](self 主钮)        │
-└──────────────────────────────┘  └──────────────────────────────┘
+│ ┌──────────────────────────┐ │  │ 选择对手（合并单一列表 2 列） │
+│ │ 图例 hero（五态标记实样） │ │  │ ┌random────────┐ ┌df────────┐ │
+│ └──────────────────────────┘ │  │ │600ep·画像一句 │ │…画像一句   │ │
+│ 你是一个文明，在某个文明产生  │  │ └──────────────┘ └─────────┘ │
+│ 时出生。目标：活到第 250 刻。│  │ ┌a_classic─────┐ ┌b_terminal─┐ │
+│ （sans 导语）                │  │ │soft 0.01·bd 0.5│ │soft 0·bd 0│ │
+│ ┌───────────┐ ┌───────────┐ │  │ │画像一句       │ │画像一句    │ │
+│ │ 与智能博弈 │ │ 在线排队   │ │  │ └──────────────┘ └─────────┘ │
+│ │ (self 主钮)│ │ 入场       │ │  │ …c_res / d_malintent          │
+│ └───────────┘ └───────────┘ │  │ ▸ 世界常量（已改 3 项）        │
+│ 规则速览（sans：公理/动作/经济）│  │   [默认][a][b][c][d] [恢复]   │
+└──────────────────────────────┘  │   tMax  [250] 默认 250        │
+                                  │   偏离披露 · 奖励参数披露      │
+                                  │ 单种子披露脚注               │
+                                  │ [开始对局](self 主钮)        │
+                                  └──────────────────────────────┘
 
-/match 对局台：三区布局 = §8 线框；另设页面内演示控制条（常规 / 触发入侵模态 / 触发终局），
-仅原型期存在。
+/match 对局台：三区布局 = §8 线框（右列 = 自身面板 → [奖励][参谋] 辅助钮行 → 4×2 行动面板 →
+日志）。
 
 /online 在线大厅
 ┌──────────────────────────────┐

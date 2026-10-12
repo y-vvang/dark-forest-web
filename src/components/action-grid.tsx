@@ -1,11 +1,13 @@
 import { useI18n, type MessageKey } from "@/i18n";
+import type { EnvConfig } from "@/lib/engine/config";
 import { ACTION_NUM, gateOf, type ActionId } from "@/lib/solo/gates";
 
 import { Panel } from "./panel";
 
 /**
- * The 3×3 action grid (DESIGN.md §10.4): row 1 existence, row 2
- * intel·sanctuary·plunder, row 3 violence.
+ * The 4×2 action grid (DESIGN.md §10.4, v2.4 — user picked 2026-10-10):
+ * row 1 existence·broadcast (silent/develop/broadcast/reveal),
+ * row 2 intel·sanctuary·force (observe/domain/invade/strike).
  *
  * Selection model B (user-confirmed 2026-10-09): grid buttons only SELECT —
  * the full-width Execute·next-tick button below is the single submit entry.
@@ -13,8 +15,9 @@ import { Panel } from "./panel";
  *   Execute press runs it (steady state = 1 click per tick);
  * - one-shot actions: enter a pending state (lethal highlight); after the
  *   tick resolves the highlight reverts to the stance;
- * - strike/invade still arm a target-pick submode first (execute disabled
- *   while armed).
+ * - targeting actions (strike/invade/reveal/observe) arm a target-pick
+ *   submode first (execute disabled while armed; strike/observe have a
+ *   "nearest known" skip in the armed bar; invade/reveal require a pick).
  *
  * Disabled = env's own valid row (`valid[a] === false`); the inline reason
  * comes from gateOf (parity-locked against env in gates-parity.test).
@@ -32,12 +35,11 @@ const ORDER: ActionDef[] = [
     { id: "silent", name: "actions.silent", sub: "actions.silent.sub" },
     { id: "develop", name: "actions.develop", sub: "actions.develop.sub" },
     { id: "broadcast", name: "actions.broadcast", sub: "actions.broadcast.sub" },
-    { id: "observe", name: "actions.observe", sub: "actions.observe.sub" },
+    { id: "reveal", name: "actions.reveal", sub: "actions.reveal.sub", targets: true },
+    { id: "observe", name: "actions.observe", sub: "actions.observe.sub", targets: true },
     { id: "domain", name: "actions.domain", sub: "actions.domain.sub" },
     { id: "invade", name: "actions.invade", sub: "actions.invade.sub", targets: true },
     { id: "strike", name: "actions.strike", sub: "actions.strike.sub", targets: true },
-    { id: "strikeWeak", name: "actions.strikeWeak", sub: "actions.strikeWeak.sub" },
-    { id: "strikeStrong", name: "actions.strikeStrong", sub: "actions.strikeStrong.sub" },
 ];
 
 const STANCE_IDS: ReadonlySet<ActionId> = new Set(["silent", "develop"]);
@@ -60,6 +62,7 @@ export function ActionGrid({
     onArm,
     onExecute,
     executeDisabled,
+    cfg,
 }: {
     tech: number;
     res: number;
@@ -77,6 +80,8 @@ export function ActionGrid({
     onArm: (id: ActionId) => void;
     onExecute: () => void;
     executeDisabled: boolean;
+    /** 会话环境配置：门理由文字与真实门槛一致（缺省 = v2.4 默认） */
+    cfg?: EnvConfig;
 }) {
     const { t } = useI18n();
 
@@ -91,9 +96,9 @@ export function ActionGrid({
 
     return (
         <Panel title={t("match.actions")}>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {ORDER.map((def) => {
-                    const reason = gateOf(def.id, tech, res, hasKnown);
+                    const reason = gateOf(def.id, tech, res, hasKnown, cfg);
                     const blocked = !valid[ACTION_NUM[def.id]] || reason !== null;
                     const isArmed = armed === def.id;
                     // 武装中仅武装钮高亮（单信号）——取消/选标后 pending 高亮回归

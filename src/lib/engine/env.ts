@@ -1,28 +1,32 @@
 /**
- * DarkForestEnv2 —— v2.3-fix 的忠实 TS 移植。
+ * DarkForestEnv2 —— v2.4 的忠实 TS 移植。
  *
- * 权威源：experiment/experiment/env2.py（629 行）。字段名/方法集与其一一对应
+ * 权威源：experiment/experiment/env2_v24.py（654 行）。字段名/方法集与其一一对应
  * （_obs→obs()、_valid→valid()、_pair_dist→pairDist）；quirk 清单见
- * docs/env-model-v23.md §0（Q1-Q12），全部照抄。
+ * docs/env-model-v23.md §0（Q1-Q13），全部照抄。
+ *
+ * v2.4 vs v2.3-fix：BROADCAST_SELF→BROADCAST_ALL（改名）；BROADCAST_OTHER 恢复为
+ * 「揭露 known 目标」；删 STRIKE_WEAK/STRONG；OBSERVE 显式选目标；出生无科技继承
+ * （恒 tech_spawn_lo，每出生少 1 个 RNG 值）；奖励臂参数 res_reward_scale/attack_reward。
  *
  * 与 python 的既定差异（见 docs/game-mechanics.md §2/§3）：
  * - 随机数经构造期注入（Rng 接口 = uniform/choice 两法）；reset() 无 seed 参数。
  * - numpy 向量化 → 显式循环（36 槽规模无关紧要）。
- * - obs/valid 平铺行主序：obs[i*38+k]、valid[i*10+a]。
+ * - obs/valid 平铺行主序：obs[i*36+k]、valid[i*8+a]。
+ * - TickResult.rewardDetail：TS-only 奖励诊断（游戏层扩展，非 parity——录制端无此字段）。
  */
 import type { EnvConfig } from "./config";
+import { numpyArgsort } from "./numpy-sort";
 import type { Rng } from "./rng";
 import {
+    A_BALL,
     A_BDOMAIN,
     A_BOTHER,
-    A_BSELF,
     A_DEVELOP,
     A_INVADE,
     A_OBSERVE,
     A_SILENT,
     A_STRIKE,
-    A_STRIKE_STRONG,
-    A_STRIKE_WEAK,
     N_ACTIONS,
     NEAR_K,
     OBS_DIM,
@@ -31,23 +35,6 @@ import {
     type TickInfo,
     type TickResult,
 } from "./types";
-
-/** numpy _lerp 的两分支（t≥0.5 走 b−(b−a)·(1−t)，数值优化路径——须逐位一致） */
-function lerpNumpy(a: number, b: number, t: number): number {
-    const diff = b - a;
-    return t >= 0.5 ? b - diff * (1 - t) : a + diff * t;
-}
-
-/** numpy percentile 默认 'linear' 插值：pos=q/100·(m−1)，floor/ceil 内插 */
-function percentileLinear(sortedAsc: number[], q: number): number {
-    const m = sortedAsc.length;
-    if (m === 1) return sortedAsc[0];
-    const pos = (q / 100) * (m - 1);
-    const lo = Math.floor(pos);
-    const hi = Math.ceil(pos);
-    if (lo === hi) return sortedAsc[lo];
-    return lerpNumpy(sortedAsc[lo], sortedAsc[hi], pos - lo);
-}
 
 /** resolve() 各阶段共享的刻内累积器（python 中为函数局部量） */
 interface TickCtx {
@@ -64,7 +51,12 @@ interface TickCtx {
     counterDetections: number;
     deadNow: Uint8Array;
     kills: Map<number, number>; // 阶段 4：victim → killer
-    knownAliveD: Float64Array; // 阶段 4 构建、阶段 6 复用（含打击前的活标志快照——照抄 env2.py）
+    knownAliveD: Float64Array; // 阶段 4 构建、阶段 6 复用（含打击前的活标志快照——照抄 env2_v24.py）
+    /** TS-only 奖励诊断累积（rewardDetail 的原料；techTerm/resAtReward 在 stageRewards 填） */
+    attackCount: Int32Array;
+    bdEnter: Uint8Array;
+    techTerm: Float64Array;
+    resAtReward: Float64Array;
 }
 
 export class DarkForestEnv2 {
@@ -104,6 +96,8 @@ export class DarkForestEnv2 {
     private readonly shield_cost_frac: number;
     private readonly softsign_a: number;
     private readonly softsign_reward_scale: number;
+    private readonly res_reward_scale: number; // v2.4 奖励臂
+    private readonly attack_reward: number; // v2.4 奖励臂
 
     readonly rng: Rng;
 
@@ -117,7 +111,7 @@ export class DarkForestEnv2 {
     public_: Uint8Array; // `public` 是 TS 保留字
     in_domain: Uint8Array;
     domain_windup: Uint8Array;
-    pending_reveal: ["self", number][]; // env2.py 的 (kind, j)，kind 恒 "self"
+    pending_reveal: ["self" | "other", number][]; // env2_v24.py 的 (kind, j)——v2.4 增 "other" 揭露
     pending_counter: number[];
     last_action: Int32Array;
     first_detect_tick: Int32Array; // n*n，初始 -1
@@ -175,6 +169,8 @@ export class DarkForestEnv2 {
         this.shield_cost_frac = cfg.shieldCostFrac;
         this.softsign_a = cfg.softsignA;
         this.softsign_reward_scale = cfg.softsignRewardScale;
+        this.res_reward_scale = cfg.resRewardScale;
+        this.attack_reward = cfg.attackReward;
         this.rng = rng;
 
         const n = this.n;
@@ -293,8 +289,8 @@ export class DarkForestEnv2 {
 
     // ------------------------------------------------------------------- obs
     /**
-     * 38 维观测（env2.py:289-331）：7 标量 + 10 上刻动作 one-hot + 3 个最近已知
-     * 存活非域文明 × 7。死亡/未生行整行清零。crowd（env2.py:292）为死代码，不移植。
+     * 36 维观测（env2_v24.py:305-347）：7 标量 + 8 上刻动作 one-hot + 3 个最近已知
+     * 存活非域文明 × 7。死亡/未生行整行清零。crowd（env2_v24.py:308）为死代码，不移植。
      * 近邻排序用稳定排序——被掩蔽行输出恒为零向量，平手序差异无害（规格 §3.3）。
      */
     obs(): Float32Array {
@@ -319,10 +315,9 @@ export class DarkForestEnv2 {
             out[base + 5] = this.in_domain[i];
             out[base + 6] = this.domain_windup[i];
             out[base + 7 + this.last_action[i]] = 1; // one-hot
-            // 近邻候选（big 矩阵语义，env2.py:308-311）：known & alive & 距离 ≤ 半径——
-            // 【不滤域内者】：已知+存活的域内目标以真实几何进入 Δx/Δy/d（dmask 为真），
-            // 仅 tech/res/public/in_domain 情报特征被 known_pair（含 ~in_domain）掩蔽。
-            const cand: { j: number; d: number }[] = [];
+            // big 行（env2_v24.py:324-326）：known & alive & 距离 ≤ 半径 → 真实距离，
+            // 否则 inf（对角恒 inf；【不滤域内者】——域内目标以真实几何进入）。
+            const big = new Float64Array(n).fill(Infinity);
             for (let j = 0; j < n; j++) {
                 if (i === j) continue;
                 if (
@@ -330,37 +325,43 @@ export class DarkForestEnv2 {
                     this.known[i * n + j] &&
                     this.alive[j]
                 )
-                    cand.push({ j, d: dist[i * n + j] });
+                    big[j] = dist[i * n + j];
             }
-            cand.sort((a, b) => a.d - b.d); // JS sort 稳定
+            // order = np.argsort(big)（env2_v24.py:327）——**须逐位复刻 numpy**（含 inf
+            // 平局序）：候选不足 3 时掩码行的 tech/res/public 取排序后第 k 位文明的
+            // known_pair/observed 旗标（距离无关）——伪影但为权威行为（numpy-sort.ts）。
+            const order = numpyArgsort(big);
             // 近邻块为 feature-major（np.concatenate(axis=-1) 拼各 (n,NEAR_K) 列组）：
-            // [17+k]=Δx [20+k]=Δy [23+k]=d [26+k]=tech [29+k]=res [32+k]=public [35+k]=in_domain
+            // [15+k]=Δx [18+k]=Δy [21+k]=d [24+k]=tech [27+k]=res [30+k]=public [33+k]=in_domain
             for (let k = 0; k < NEAR_K; k++) {
-                const c = cand[k]; // 无候选 → 掩蔽零
-                const isCand = c !== undefined; // dmask：几何特征门
-                const knownPair = isCand && this.in_domain[c.j] === 0; // 情报特征门（含 ~in_domain）
+                const j = order[k];
+                const dmask = Number.isFinite(big[j]); // 几何特征门（掩码行 Δx/Δy/d = 0）
+                const knownPair =
+                    this.known[i * n + j] === 1 &&
+                    this.alive[j] === 1 &&
+                    this.in_domain[j] === 0; // 情报特征门（距离无关——照抄）
                 let dx = 0;
                 let dy = 0;
                 let d = 0;
-                if (isCand) {
-                    // 域内目标亦以真实几何进入（big 不滤域内者，env2.py:310/316）
-                    dx = this.pos[c.j * 2] - this.pos[i * 2];
-                    dy = this.pos[c.j * 2 + 1] - this.pos[i * 2 + 1];
+                if (dmask) {
+                    // 域内目标亦以真实几何进入（big 不滤域内者）
+                    dx = this.pos[j * 2] - this.pos[i * 2];
+                    dy = this.pos[j * 2 + 1] - this.pos[i * 2 + 1];
                     dx -= this.world * Math.round(dx / this.world); // 环面回绕
                     dy -= this.world * Math.round(dy / this.world);
-                    d = c.d;
+                    d = big[j];
                 }
-                const hasIntel = knownPair && this.observed[i * n + c.j] === 1;
-                const nearTech = hasIntel ? this.tech[c.j] : -1;
-                const nearRes = hasIntel ? this.res[c.j] : -1;
-                out[base + 17 + k] = Math.fround(dx / 50);
-                out[base + 20 + k] = Math.fround(dy / 50);
-                out[base + 23 + k] = Math.fround(d / 50);
-                out[base + 26 + k] =
+                const hasIntel = knownPair && this.observed[i * n + j] === 1;
+                const nearTech = hasIntel ? this.tech[j] : -1;
+                const nearRes = hasIntel ? this.res[j] : -1;
+                out[base + 15 + k] = Math.fround(dx / 50);
+                out[base + 18 + k] = Math.fround(dy / 50);
+                out[base + 21 + k] = Math.fround(d / 50);
+                out[base + 24 + k] =
                     nearTech >= 0 ? Math.fround(Math.log1p(Math.max(nearTech, 0)) / LOG_REF) : -1;
-                out[base + 29 + k] = Math.fround(nearRes / this.res_max);
-                out[base + 32 + k] = knownPair && this.public_[c.j] === 1 ? 1 : 0;
-                out[base + 35 + k] = 0; // Q3：in_domain 特征恒 0
+                out[base + 27 + k] = Math.fround(nearRes / this.res_max);
+                out[base + 30 + k] = knownPair && this.public_[j] === 1 ? 1 : 0;
+                out[base + 33 + k] = 0; // Q3：in_domain 特征恒 0（×known_pair 含 ~in_domain）
             }
         }
         return out;
@@ -368,8 +369,9 @@ export class DarkForestEnv2 {
 
     // ----------------------------------------------------------------- masks
     /**
-     * 合法动作掩码（env2.py:257-286）。平铺 n×10，行主序 valid[i*10+a]。
-     * strikeable 行 = 存在（已知 & 活 & 非域 & 非风窗）目标且自身活。
+     * 合法动作掩码（env2_v24.py:278-298）。平铺 n×8，行主序 valid[i*8+a]。
+     * strikeable 行 = 存在（已知 & 活 & 非域 & 非风窗）目标且自身活；
+     * v2.4：BOTHER（揭露）需 strikeable 目标 + 广播门（tech>1 或 res>10）。
      */
     valid(): Uint8Array {
         const n = this.n;
@@ -388,24 +390,20 @@ export class DarkForestEnv2 {
         for (let i = 0; i < n; i++) {
             const r = i * N_ACTIONS;
             const gateB = this.tech[i] > this.gate_broadcast_tech || this.res[i] > this.gate_broadcast_res;
-            v[r + A_BOTHER] = 0; // v2.3：定向广播已退役，任何状态恒非法
+            v[r + A_BOTHER] = strikeable[i]; // v2.4：揭露恢复（需 known 存活非域目标）
             v[r + A_STRIKE] = strikeable[i];
-            v[r + A_STRIKE_WEAK] = strikeable[i];
-            v[r + A_STRIKE_STRONG] = strikeable[i];
             v[r + A_INVADE] = strikeable[i];
             v[r + A_OBSERVE] = strikeable[i];
-            if (!gateB) v[r + A_BSELF] = 0;
+            if (!gateB) v[r + A_BALL] = 0;
+            if (!gateB) v[r + A_BOTHER] = 0;
             if (this.tech[i] <= this.gate_observe_tech) v[r + A_OBSERVE] = 0;
             v[r + A_BDOMAIN] = this.enable_black_domain && this.tech[i] > this.gate_domain_tech && this.alive[i] ? 1 : 0;
             if (this.tech[i] <= this.gate_strike_tech) {
                 v[r + A_STRIKE] = 0;
-                v[r + A_STRIKE_WEAK] = 0;
-                v[r + A_STRIKE_STRONG] = 0;
             }
             if (this.in_domain[i] || this.domain_windup[i]) {
                 // 域内/风窗：仅 DEVELOP/SILENT（BD 重声明无害：entering 判定排除在域者）
-                for (const a of [A_BOTHER, A_STRIKE, A_STRIKE_WEAK, A_STRIKE_STRONG, A_INVADE, A_OBSERVE, A_BSELF])
-                    v[r + a] = 0;
+                for (const a of [A_BOTHER, A_STRIKE, A_INVADE, A_OBSERVE, A_BALL]) v[r + a] = 0;
             }
             if (!this.alive[i]) {
                 // 未生/已死：本刻不行动；SILENT 恒合法（驱动器可安全传全 0）
@@ -417,14 +415,21 @@ export class DarkForestEnv2 {
     }
 
     /**
-     * 需要显式目标的动作（INVADE/STRIKE）的候选掩码（env2.py:334-340）。
-     * 注意：候选仅排除【域内】目标，不排除风窗（与 valid 的 strikeable 不同——照抄）。
+     * 需要显式目标的动作（v2.4：INVADE/STRIKE/BOTHER/OBSERVE）的候选掩码
+     * （env2_v24.py:350-356）。注意：候选仅排除【域内】目标，不排除风窗
+     * （与 valid 的 strikeable 不同——照抄）。
      */
     selectTargets(actions: Int32Array): Uint8Array {
         const n = this.n;
         const out = new Uint8Array(n * n);
         for (let i = 0; i < n; i++) {
-            if (actions[i] !== A_INVADE && actions[i] !== A_STRIKE) continue;
+            if (
+                actions[i] !== A_INVADE &&
+                actions[i] !== A_STRIKE &&
+                actions[i] !== A_BOTHER &&
+                actions[i] !== A_OBSERVE
+            )
+                continue;
             for (let j = 0; j < n; j++) {
                 out[i * n + j] = this.known[i * n + j] && this.alive[j] && !this.in_domain[j] ? 1 : 0;
             }
@@ -444,7 +449,13 @@ export class DarkForestEnv2 {
         if (targets !== null) {
             const mask = this.selectTargets(this._actions); // 纯读，循环外一次即可
             for (let i = 0; i < n; i++) {
-                if (this._actions[i] !== A_INVADE && this._actions[i] !== A_STRIKE) continue;
+                if (
+                    this._actions[i] !== A_INVADE &&
+                    this._actions[i] !== A_STRIKE &&
+                    this._actions[i] !== A_BOTHER &&
+                    this._actions[i] !== A_OBSERVE
+                )
+                    continue;
                 const j = targets[i];
                 if (j >= 0 && mask[i * n + j] === 1) this._targets.set(i, j);
             }
@@ -492,6 +503,10 @@ export class DarkForestEnv2 {
             deadNow: new Uint8Array(n),
             kills: new Map(),
             knownAliveD: new Float64Array(0),
+            attackCount: new Int32Array(n),
+            bdEnter: new Uint8Array(n),
+            techTerm: new Float64Array(n),
+            resAtReward: new Float64Array(n),
         };
 
         this.stageSanitize(ctx, actions); // env2.py:373-393
@@ -544,6 +559,13 @@ export class DarkForestEnv2 {
             done: this._done,
             info,
             deadNow: ctx.deadNow,
+            // TS-only 奖励诊断（非 parity）：techTerm/resAtReward 由 stageRewards 填
+            rewardDetail: {
+                techTerm: ctx.techTerm,
+                resAtReward: ctx.resAtReward,
+                attackCount: ctx.attackCount,
+                bdEnter: ctx.bdEnter,
+            },
         };
     }
 
@@ -566,7 +588,7 @@ export class DarkForestEnv2 {
     }
 
     // ------------------------------------------------------- resolve stages
-    /** sanitize（env2.py:373-393）：无 known 的攻击行、域内高级动作、越门动作 → SILENT */
+    /** sanitize（env2_v24.py:389-406）：无 known 的攻击行、域内高级动作、越门动作 → SILENT */
     private stageSanitize(ctx: TickCtx, actions: Int32Array): void {
         const n = this.n;
         const eff = Int32Array.from(actions);
@@ -582,11 +604,7 @@ export class DarkForestEnv2 {
         for (let i = 0; i < n; i++) {
             if (
                 !anyKnown[i] &&
-                (eff[i] === A_STRIKE ||
-                    eff[i] === A_STRIKE_WEAK ||
-                    eff[i] === A_STRIKE_STRONG ||
-                    eff[i] === A_INVADE ||
-                    eff[i] === A_OBSERVE)
+                (eff[i] === A_STRIKE || eff[i] === A_INVADE || eff[i] === A_BOTHER || eff[i] === A_OBSERVE)
             )
                 eff[i] = A_SILENT;
         }
@@ -600,16 +618,12 @@ export class DarkForestEnv2 {
         // tech 门（防御性；mask 正常时不会触达）
         for (let i = 0; i < n; i++) {
             if (eff[i] === A_STRIKE && !(this.tech[i] > this.gate_strike_tech)) eff[i] = A_SILENT;
-            if (eff[i] === A_STRIKE_WEAK && !(this.tech[i] > this.gate_strike_tech))
-                eff[i] = A_SILENT;
-            if (eff[i] === A_STRIKE_STRONG && !(this.tech[i] > this.gate_strike_tech))
-                eff[i] = A_SILENT;
             if (eff[i] === A_OBSERVE && !(this.tech[i] > this.gate_observe_tech))
                 eff[i] = A_SILENT;
             if (eff[i] === A_BDOMAIN && !(this.tech[i] > this.gate_domain_tech))
                 eff[i] = A_SILENT;
             const gateB = !(this.tech[i] > this.gate_broadcast_tech || this.res[i] > this.gate_broadcast_res);
-            if (eff[i] === A_BSELF && gateB) eff[i] = A_SILENT;
+            if (eff[i] === A_BALL && gateB) eff[i] = A_SILENT;
             if (eff[i] === A_BOTHER && gateB) eff[i] = A_SILENT;
         }
         if (!this.enable_black_domain)
@@ -633,6 +647,7 @@ export class DarkForestEnv2 {
                 !this.domain_windup[i];
             if (entering) {
                 ctx.rewards[i] -= this.bd_entry_penalty;
+                ctx.bdEnter[i] = 1; // TS-only 诊断
                 this.domain_windup[i] = 1;
             }
         }
@@ -693,10 +708,25 @@ export class DarkForestEnv2 {
         }
     }
 
-    /** 阶段 3：本刻广播入队（env2.py:444-450）——下刻全体可见 */
+    /**
+     * 阶段 3：本刻广播入队（env2_v24.py:457-472）——下刻全体可见。
+     * v2.4 双通道：BALL 公布自己坐标；BOTHER（揭露）公布 known 目标坐标——
+     * 目标须活且非域（风窗可揭露）；发送者不暴露。揭露付 attack_reward（d 臂）。
+     */
     private stageQueueBroadcasts(ctx: TickCtx): void {
+        // python 两个独立循环：全部 BALL 先入队（升序），再 BOTHER（升序）——顺序照抄
         for (let i = 0; i < this.n; i++) {
-            if (ctx.eff[i] === A_BSELF && this.alive[i]) this.pending_reveal.push(["self", i]);
+            if (ctx.eff[i] === A_BALL && this.alive[i]) this.pending_reveal.push(["self", i]);
+        }
+        for (let i = 0; i < this.n; i++) {
+            if (ctx.eff[i] === A_BOTHER && this.alive[i]) {
+                const j = this._targets.get(i) ?? -1;
+                if (j >= 0 && this.known[i * this.n + j] && this.alive[j] === 1 && !this.in_domain[j]) {
+                    this.pending_reveal.push(["other", j]);
+                    ctx.rewards[i] += this.attack_reward;
+                    ctx.attackCount[i]++; // TS-only 诊断
+                }
+            }
         }
     }
 
@@ -716,60 +746,35 @@ export class DarkForestEnv2 {
         return best;
     }
 
-    /** 行内 argmax（平手取先） */
-    private argmaxRow(arr: Float64Array, i: number, n: number): number {
-        let best = 0;
-        let bestV = arr[i * n];
-        for (let j = 1; j < n; j++) {
-            const v = arr[i * n + j];
-            if (v > bestV) {
-                bestV = v;
-                best = j;
-            }
-        }
-        return best;
-    }
-
-    /** 阶段 4：打击（env2.py:452-506）——WEAK/STRONG/显式或最近；护盾先于掷骰 */
+    /**
+     * 阶段 4：打击（env2_v24.py:474-508）——v2.4 单模式：显式目标（锁定）否则最近已知。
+     * （STRIKE_WEAK/STRONG 已删——按未观测的真实科技排序=观测前作弊。）
+     * 护盾先于掷骰；击杀认领付 attack_reward（d 臂）。
+     */
     private stageStrikes(ctx: TickCtx): void {
         const n = this.n;
         const dist = this.pairDist();
         const knownAliveD = new Float64Array(n * n).fill(Infinity);
-        const knownAliveTech = new Float64Array(n * n).fill(Infinity); // WEAK 用（min）
-        const knownAliveTechN = new Float64Array(n * n).fill(-Infinity); // STRONG 用（max）
         for (let i = 0; i < n; i++) {
             for (let j = 0; j < n; j++) {
                 if (i === j) continue;
                 if (this.known[i * n + j] && this.alive[j] && !this.in_domain[j] && !this.domain_windup[j]) {
                     knownAliveD[i * n + j] = dist[i * n + j];
-                    knownAliveTech[i * n + j] = this.tech[j];
-                    knownAliveTechN[i * n + j] = this.tech[j];
                 }
             }
         }
         ctx.knownAliveD = knownAliveD; // 阶段 6 观测复用（活标志为打击前快照——照抄）
         for (let i = 0; i < n; i++) {
-            if (
-                ctx.eff[i] !== A_STRIKE &&
-                ctx.eff[i] !== A_STRIKE_WEAK &&
-                ctx.eff[i] !== A_STRIKE_STRONG
-            )
-                continue;
+            if (ctx.eff[i] !== A_STRIKE) continue;
             if (!this.alive[i]) continue;
-            const mode = ctx.eff[i];
-            let j: number;
-            if (mode === A_STRIKE_WEAK) j = this.argminRow(knownAliveTech, i, n);
-            else if (mode === A_STRIKE_STRONG) j = this.argmaxRow(knownAliveTechN, i, n);
-            else {
-                j = this._targets.get(i) ?? -1;
-                if (
-                    j < 0 ||
-                    !(this.known[i * n + j] && this.alive[j] === 1) ||
-                    this.in_domain[j] === 1 ||
-                    this.domain_windup[j] === 1
-                )
-                    j = this.argminRow(knownAliveD, i, n); // 最近已知兜底
-            }
+            let j = this._targets.get(i) ?? -1;
+            if (
+                j < 0 ||
+                !(this.known[i * n + j] && this.alive[j] === 1) ||
+                this.in_domain[j] === 1 ||
+                this.domain_windup[j] === 1
+            )
+                j = this.argminRow(knownAliveD, i, n); // 最近已知兜底
             if (!Number.isFinite(knownAliveD[i * n + j])) continue; // 无合法目标 → 无事件
             const techI = this.tech[i];
             const techJ = this.tech[j];
@@ -789,7 +794,11 @@ export class DarkForestEnv2 {
             const killed = this.rng.uniform() < pKill;
             ctx.strikes.push([i, j, killed]);
             ctx.strikeEvents.push([i, j, killed ? "killed" : "survived", techI, techJ, 0]);
-            if (killed && this.alive[j] === 1 && !ctx.kills.has(j)) ctx.kills.set(j, i);
+            if (killed && this.alive[j] === 1 && !ctx.kills.has(j)) {
+                ctx.kills.set(j, i);
+                ctx.rewards[i] += this.attack_reward; // v2.4：打击击杀赏金
+                ctx.attackCount[i]++; // TS-only 诊断
+            }
         }
         // 2026-09-22 修复本体（env2.py:498-506）：击杀置死
         for (const v of ctx.kills.keys()) {
@@ -819,13 +828,16 @@ export class DarkForestEnv2 {
             }
         }
         for (const v of invasionKill.keys()) if (this.alive[v] === 1) this.alive[v] = 0;
-        // 掠夺：幸存杀手取尸体半数（env2.py:529-535）；余下经 8b 入池
+        // 掠夺：幸存杀手取尸体半数（env2_v24.py:539-548）；余下经 8b 入池；
+        // 入侵缴获（含反咬击杀）付 attack_reward
         for (const [victim, killer] of invasionKill) {
             if (this.alive[killer] === 1 && this.alive[victim] === 0) {
                 const take = 0.5 * Math.max(this.res[victim], 0);
                 this.res[killer] += take;
                 ctx.lootTo[killer] += take;
                 this.res[victim] = 0.5 * Math.max(this.res[victim], 0);
+                ctx.rewards[killer] += this.attack_reward; // v2.4：入侵击杀赏金
+                ctx.attackCount[killer]++; // TS-only 诊断
             }
         }
         // dead_now 装配（env2.py:537-540）+ 死因（541-547：mutual > invade > strike 覆盖序）
@@ -849,12 +861,22 @@ export class DarkForestEnv2 {
 
     // ---- Task 9 实装 ----
 
-    /** 阶段 6：观测（env2.py:549-556）——最近已知的精确 tech/res；下刻反曝光 */
+    /**
+     * 阶段 6：观测（env2_v24.py:562-572）——v2.4 显式目标（锁定）否则最近已知
+     * （与 STRIKE 同协议）；精确 tech/res；下刻反曝光。
+     */
     private stageObserve(ctx: TickCtx): void {
         const n = this.n;
         for (let i = 0; i < n; i++) {
             if (ctx.eff[i] !== A_OBSERVE || !this.alive[i]) continue;
-            const j = this.argminRow(ctx.knownAliveD, i, n);
+            let j = this._targets.get(i) ?? -1;
+            if (
+                j < 0 ||
+                !(this.known[i * n + j] && this.alive[j] === 1) ||
+                this.in_domain[j] === 1 ||
+                this.domain_windup[j] === 1
+            )
+                j = this.argminRow(ctx.knownAliveD, i, n); // 最近已知兜底
             if (Number.isFinite(ctx.knownAliveD[i * n + j])) {
                 this.observed[i * n + j] = 1;
                 this.pending_counter.push(i); // to see is to be seen
@@ -915,7 +937,11 @@ export class DarkForestEnv2 {
         }
     }
 
-    /** 阶段 9：奖励（env2.py:594-603）——死亡 −10；发展 +scale·tech/(1+a|tech|) */
+    /**
+     * 阶段 9：奖励（env2_v24.py:611-629）——死亡 −deathPenalty；发展 +softsign·tech/(1+a|tech|)
+     * + v2.4 奖励臂：DEVELOP 刻 + resRewardScale·res（>0 才加；c/d 臂）。
+     * 同时填 rewardDetail 的 techTerm/resAtReward（TS-only 诊断）。
+     */
     private stageRewards(ctx: TickCtx): void {
         const n = this.n;
         for (let i = 0; i < n; i++) {
@@ -923,9 +949,11 @@ export class DarkForestEnv2 {
         }
         for (let i = 0; i < n; i++) {
             if (ctx.eff[i] === A_DEVELOP && this.alive[i]) {
-                ctx.rewards[i] +=
-                    (this.softsign_reward_scale * this.tech[i]) /
-                    (1 + this.softsign_a * Math.abs(this.tech[i]));
+                const techTerm = this.tech[i] / (1 + this.softsign_a * Math.abs(this.tech[i]));
+                ctx.rewards[i] += this.softsign_reward_scale * techTerm;
+                if (this.res_reward_scale > 0) ctx.rewards[i] += this.res_reward_scale * this.res[i];
+                ctx.techTerm[i] = techTerm; // TS-only 诊断
+                ctx.resAtReward[i] = this.res[i];
             }
         }
     }
@@ -936,8 +964,9 @@ export class DarkForestEnv2 {
     }
 
     /**
-     * v2.3 无界内生出生（env2.py:224-254）：恒恰一个预滚额；池攒够即生
-     * （每刻至多 1 个、最靠前空槽）；出生科技取活者 P25–P75（最小跨度 1.0）。
+     * v2.4 无界内生出生（env2_v24.py:249-275）：恒恰一个预滚额；池攒够即生
+     * （每刻至多 1 个、最靠前空槽）。**无科技继承**：出生科技恒 tech_spawn_lo
+     * （config 钉 lo=hi=1.0——同起跑线；v2.3 的 P25–P75 抽取已删，每出生少 1 个 RNG 值）。
      */
     activatePendingSpawns(): void {
         if (this.pending_spawns.length === 0) return;
@@ -952,24 +981,7 @@ export class DarkForestEnv2 {
         if (slot < 0) return;
         const spawnRes = this.pending_spawns.shift() as number;
         this.pending_spawns.push(this.rng.uniformRange(this.res_min, this.res_max)); // 再预滚下一个
-        const actTech: number[] = [];
-        for (let i = 0; i < this.n; i++) if (this.alive[i]) actTech.push(this.tech[i]);
-        let lo: number;
-        let hi: number;
-        if (actTech.length >= 2) {
-            actTech.sort((a, b) => a - b);
-            lo = percentileLinear(actTech, 25);
-            hi = percentileLinear(actTech, 75);
-        } else {
-            lo = this.tech_spawn_lo;
-            hi = this.tech_spawn_hi;
-        }
-        if (hi - lo < 1.0) {
-            const mid = 0.5 * (lo + hi);
-            lo = mid - 0.5;
-            hi = mid + 0.5;
-        }
-        this.tech[slot] = this.rng.uniformRange(lo, hi);
+        this.tech[slot] = this.tech_spawn_lo;
         this.res[slot] = spawnRes;
         this.free_pool -= spawnRes;
         this.spawn_tech[slot] = this.tech[slot];

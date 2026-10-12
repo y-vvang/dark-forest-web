@@ -185,14 +185,17 @@ learner/random 一律均匀（stage_b.py:52 实际路径）。
 - `env.reset(seed=S)`：初始 4 席 = 所选对手循环填充。
 - **玩家 = 下一个内生出生**（出生序 4，通常第 1 刻，因开局自由池均值 ≈100 ≥ 预滚额 ≤20）。
   出生前复用 /online 的幽灵排队视图：只见全局读数（刻/存活/自由池），无任何情报。
+  v2.4：出生科技恒 `tech_spawn_lo`=1.0（无继承）；开局配置若拉高 resMin/拉低预算可能推迟出生——
+  `start()` 循环自动逐刻推进直至出生或 done（未及诞生分支兜底）。
 - 之后每次内生出生继续按所选对手循环。36 席一次性（Q11）；预算 150 保证全期出生 ≤ ~30，玩家席安全。
 - 极端兜底：若玩家出生前热寂（对局即 done 而玩家未出生）→ 终局覆盖层"未及诞生"分支（新增文案键）。
 
 ### 6.2 逐刻循环（DESIGN §13：单机每刻暂停）
 
 ```
-1. AI 一选（批量/逐席）+ 玩家一选（ActionGrid；STRIKE/INVADE 显式目标模式：
-   候选 = select_targets(actions)[player] 行；INVADE 必须选目标，STRIKE 可不选=最近兜底）
+1. AI 一选（批量/逐席）+ 玩家一选（ActionGrid；v2.4 目标武装集 = STRIKE/INVADE/REVEAL/OBSERVE：
+   候选 = select_targets(actions)[player] 行；INVADE/REVEAL 必须显式目标，STRIKE/OBSERVE 可不选
+   =最近已知兜底）
 2. begin_tick → invaded[]
 3. 受入侵者重选：AI 按其策略；玩家 = 入侵模态（反咬 INVADE / 黑域 BDOMAIN / 保持原动作）
 4. resolve(re_actions)
@@ -217,25 +220,39 @@ info 流是全知的；UI 只渲染**该文明在环境机制下真正可知**�
 
 | # | 可见 | 依据 |
 |---|---|---|
-| ① | 自己动作的结果：打击被挡/命中/落空、入侵成功、观测所得情报、广播已发出 | 行为者对自身行为的知情权 |
-| ② | 入侵通知（含入侵者身份） | env2.py:353-359 显式机制 |
+| ① | 自己动作的结果：打击被挡/命中/落空、入侵成功、观测所得情报、广播已发出、**揭露已发出（v2.4 log.ownReveal，目标 id 取本刻 _targets）** | 行为者对自身行为的知情权 |
+| ② | 入侵通知（含入侵者身份） | env2_v24.py:369-375 显式机制 |
 | ③ | 自己的探测增量：新信号 + 坐标（无 tech/res） | known[player,·] 增量 |
-| ④ | 任何文明的公开广播（新标记 + public 标记） | pending_reveal → known[alive,j] |
-| ⑤ | 世界 HUD：刻数、存活数、自由池 | 刻数/存活数在 obs 中（env2.py:302-303）。**自由池不在 obs 中**——保留其显示属游戏层 HUD 偏离：它非对任何文明的情报（是世界物理量），且为已批准的顶栏设计（DESIGN.md §10/§11）；在此明示 |
+| ④ | 任何文明的"公开化"（新标记 + public 标记）——**v2.4 含他人揭露的第三方**（与自曝同形，归因歧义=机制真相：known[alive,j]+public[j] 双路径不可区分，欺骗成立） | pending_reveal → known[alive,j] |
+| ⑤ | 世界 HUD：刻数、存活数、自由池 | 刻数/存活数在 obs 中。**自由池不在 obs 中**——保留其显示属游戏层 HUD 偏离：它非对任何文明的情报（是世界物理量），且为已批准的顶栏设计（DESIGN.md §10/§11）；在此明示 |
 | ⑥ | 已知信号的消失（known&alive → false 的转换；无死因） | 玩家自身知识图的变化 |
 
 | # | 不可见 | 依据 |
 |---|---|---|
 | ⑦ | 他人间的探测/打击/死亡（除 ④⑥ 的间接呈现） | 无机制赋予 |
-| ⑧ | 被观测反曝光（不知道自己被谁看见） | env2.py:402-418 不通知被观测者 |
+| ⑧ | 被观测反曝光（不知道自己被谁看见） | env2_v24.py:415-431 不通知被观测者 |
 | ⑨ | 被打击但幸存（无任何通知） | env 无此信号，**严格忠实** |
 | ⑩ | 出生情报：无 #id/资源，仅存活数变化 | 出生不进任何 obs/通知 |
 | ⑪ | 他人 tech/res/资源流失/爆炸 | 需 OBSERVE（①中的观测所得） |
+| ⑫ | **被揭露**（v2.4）：自己被他人 BOTHER 公开时**零感知**——环境无任何通知机制；known[·,player] 变化不进玩家行（view 只 diff 玩家 known 行） | env2_v24.py:457-472 无信号；测试锁定 view.test "being revealed is INVISIBLE" |
 
 原 mock 键的调整：`log.born` → 情报-free（"一个新文明诞生了"）；`log.blocked` → 仅当**玩家是打击者**时
 报"你的打击被护盾挡下"（目标不感知，规则⑨）；新增 `log.dark`（已知信号消失，规则⑥）；
-新增 `log.ownStrikeHit/Miss`、`log.ownInvade`、`log.ownBroadcast`、终局"未及诞生"分支文案。
-全部新键走 DESIGN.md §7 → en.ts + zh.ts 流程。
+新增 `log.ownStrikeHit/Miss`、`log.ownInvade`、`log.ownBroadcast`、`log.ownReveal`（v2.4 揭露，
+规则①）、终局"未及诞生"分支文案。全部新键走 DESIGN.md §7 → en.ts + zh.ts 流程。
+
+### 7.1 游戏层扩展（非感知数据——引擎/机制之外，v2.4 轮新增）
+
+三项功能均为**游戏层**扩展，不触碰引擎 parity：
+
+- **奖励展示**（配置流 + 四臂对比）：引擎 `TickResult.rewardDetail`（TS-only 诊断：techTerm/
+  resAtReward/attackCount/bdEnter，在 rewards 计算处顺带记录，**不进 info、不参与录制-回放比对**）
+  → `rewards.ts` 组合任意参数集（当前 cfg / 四臂固定参数）。奖励参数不影响对手行为（披露常驻）。
+- **模型参谋**：四臂对玩家当前 obs/valid 行 greedy（`dqn.act`，ε=0 零 RNG——不触碰会话随机流）；
+  用过即于终局弹窗披露（`end.advisorUsed`）——AI 辅助 = 非独立生存的诚实标记。
+- **环境常量配置**：`cfg-io.ts` 精选 25 参数 + 出生科技旋钮；默认恒 = config_v24.yaml，任何改动 =
+  对实验的明示偏离（DESIGN §10.14 披露）；差集经 sessionStorage 传递，读取端钳制 + 忽略未知键
+  （结构参数 nAgents/world/spawnSchedule 固定——模型观测缩放按默认训练）。
 
 ## 8. UI 接线
 

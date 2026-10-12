@@ -8,27 +8,28 @@
  */
 import { expect, test } from "bun:test";
 
-import { V23_CONFIG } from "./config";
+import { V24_CONFIG } from "./config";
 import { DarkForestEnv2 } from "./env";
 import { GameRng, seedOf } from "./rng";
 import { assertConservation } from "./snapshot";
 import { loadStats } from "./testdata-io";
 import { heuristicAction, pickTarget, type PresetKind } from "@/lib/opponents/presets";
-import { A_INVADE, A_STRIKE } from "@/lib/engine/types";
+import { A_BOTHER, A_INVADE, A_OBSERVE, A_STRIKE } from "@/lib/engine/types";
 
 const N = 10;
+const TARGET_ACTIONS: number[] = [A_INVADE, A_STRIKE, A_BOTHER, A_OBSERVE]; // v2.4 目标请求集
 
 test("stat equivalence: TS env vs python reference aggregates (presets-only pool)", () => {
     const stats = loadStats();
-    const n = V23_CONFIG.nAgents;
-    const tMax = V23_CONFIG.tMax;
+    const n = V24_CONFIG.nAgents;
+    const tMax = V24_CONFIG.tMax;
     let aliveTicksTotal = 0;
     let killsTotal = 0;
-    const actCounts = new Float64Array(10);
+    const actCounts = new Float64Array(8); // v2.4：N_ACTIONS 8
 
     for (let ep = 0; ep < N; ep++) {
         const seed = 51001 + ep;
-        const env = new DarkForestEnv2(V23_CONFIG, new GameRng([seedOf(seed, "env")]));
+        const env = new DarkForestEnv2(V24_CONFIG, new GameRng([seedOf(seed, "env")]));
         env.reset();
         const session = new GameRng([seedOf(seed, "session")]); // 预制决策共享流（stage_b 口径）
         const kinds: PresetKind[] = [];
@@ -42,7 +43,7 @@ test("stat equivalence: TS env vs python reference aggregates (presets-only pool
                 if (env.alive[i]) {
                     actions[i] = heuristicAction(
                         kinds[i],
-                        valid.subarray(i * 10, (i + 1) * 10),
+                        valid.subarray(i * 8, (i + 1) * 8),
                         session,
                     );
                 }
@@ -50,7 +51,7 @@ test("stat equivalence: TS env vs python reference aggregates (presets-only pool
             const tmask = env.selectTargets(actions);
             const targets = new Int32Array(n).fill(-1);
             for (let i = 0; i < n; i++) {
-                if (actions[i] !== A_INVADE && actions[i] !== A_STRIKE) continue;
+                if (!TARGET_ACTIONS.includes(actions[i])) continue;
                 const cand: number[] = [];
                 for (let j = 0; j < n; j++) if (tmask[i * n + j]) cand.push(j);
                 if (cand.length > 0)
@@ -59,7 +60,7 @@ test("stat equivalence: TS env vs python reference aggregates (presets-only pool
             const invaded = env.beginTick(actions, targets);
             const re = Int32Array.from(actions);
             for (const v of invaded) {
-                re[v] = heuristicAction(kinds[v], valid.subarray(v * 10, (v + 1) * 10), session);
+                re[v] = heuristicAction(kinds[v], valid.subarray(v * 8, (v + 1) * 8), session);
             }
             const r = env.resolve(re);
             for (let i = 0; i < n; i++) if (env.alive[i]) aliveTicksTotal++;
@@ -76,7 +77,7 @@ test("stat equivalence: TS env vs python reference aggregates (presets-only pool
     // 带宽（README 披露）：拦结构性偏差
     expect(Math.abs(aliveFrac - stats.meanAliveFrac)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(meanKills - stats.meanKills)).toBeLessThanOrEqual(12);
-    for (let a = 0; a < 10; a++) {
+    for (let a = 0; a < 8; a++) {
         const freq = actCounts[a] / actTotal;
         expect(Math.abs(freq - stats.actionFreqs[a])).toBeLessThanOrEqual(0.06);
     }

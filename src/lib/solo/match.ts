@@ -14,9 +14,17 @@
  * 感知过滤不在本层——view.ts 只经 lastResult/env 与自身知识记忆渲染（规格 §7）。
  */
 import { DarkForestEnv2 } from "@/lib/engine/env";
-import { V23_CONFIG } from "@/lib/engine/config";
+import { V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
 import { GameRng, seedOf, type Rng } from "@/lib/engine/rng";
-import type { TickResult } from "@/lib/engine/types";
+import {
+    A_BOTHER,
+    A_INVADE,
+    A_OBSERVE,
+    A_STRIKE,
+    N_ACTIONS,
+    OBS_DIM,
+    type TickResult,
+} from "@/lib/engine/types";
 import { actBatch, type ModelWeights } from "@/lib/opponents/dqn";
 import { heuristicAction, pickTarget, type PresetKind } from "@/lib/opponents/presets";
 
@@ -62,12 +70,13 @@ export class SoloMatch {
         seed: number,
         opponentIds: string[],
         weights: Map<string, ModelWeights>,
+        cfg: EnvConfig = V24_CONFIG,
         hooks: SoloMatchHooks = {},
     ) {
         if (opponentIds.length === 0) throw new Error("SoloMatch: no opponents selected");
         this.opponentIds = opponentIds;
         this.weights = weights;
-        this.env = new DarkForestEnv2(V23_CONFIG, hooks.envRng ?? new GameRng([seedOf(seed, "env")]));
+        this.env = new DarkForestEnv2(cfg, hooks.envRng ?? new GameRng([seedOf(seed, "env")]));
         this.presetRng = hooks.presetRng ?? new GameRng([seedOf(seed, "session")]);
         for (const id of opponentIds) {
             if (id === "random" || id === "df" || id === "pacifist") continue;
@@ -103,15 +112,18 @@ export class SoloMatch {
         return this.end;
     }
 
-    /** 玩家一选（awaiting-action）。STRIKE 允许 target=-1（最近兜底）；INVADE 须显式候选。 */
+    /**
+     * 玩家一选（awaiting-action）。STRIKE/OBSERVE 允许 target=-1（最近已知兜底）；
+     * INVADE/BOTHER 须显式候选（v2.4：揭露无兜底，无目标=无揭露）。
+     */
     submitAction(action: number, target: number): void {
         if (this.phase !== "awaiting-action") throw new Error(`SoloMatch: phase ${this.phase}`);
         const row = this.validRow(this.playerSlot as number);
         if (!row[action]) throw new Error(`SoloMatch: invalid action ${action}`);
-        if (action === 6) {
+        if (action === A_INVADE || action === A_BOTHER) {
             const cand = this.candidates(this.playerSlot as number, action);
             if (target < 0 || !cand.includes(target))
-                throw new Error("SoloMatch: invade target not in candidates");
+                throw new Error("SoloMatch: invade/reveal target not in candidates");
         }
         this.runTick({ action, target });
     }
@@ -146,7 +158,7 @@ export class SoloMatch {
 
     private validRow(i: number): Uint8Array {
         const v = this.env.valid();
-        return v.subarray(i * 10, (i + 1) * 10);
+        return v.subarray(i * N_ACTIONS, (i + 1) * N_ACTIONS);
     }
 
     private candidates(i: number, action: number): number[] {
@@ -177,27 +189,33 @@ export class SoloMatch {
                 seats.push(i);
                 byArm.set(id, seats);
             } else {
-                actions[i] = heuristicAction(id as PresetKind, valid.subarray(i * 10, (i + 1) * 10), this.presetRng);
+                actions[i] = heuristicAction(
+                    id as PresetKind,
+                    valid.subarray(i * N_ACTIONS, (i + 1) * N_ACTIONS),
+                    this.presetRng,
+                );
             }
         }
+        const fullObs = env.obs(); // obs 与权重无关——每刻一次（四个臂时省 75% obs 开销，评审修复 2026-10-12）
         for (const [arm, seats] of byArm) {
             const w = this.weights.get(arm) as ModelWeights;
             const obsRows: Float32Array[] = [];
-            const fullObs = env.obs();
-            for (const s of seats) obsRows.push(fullObs.subarray(s * 38, (s + 1) * 38));
-            const validRows = seats.map((s) => valid.subarray(s * 10, (s + 1) * 10));
+            for (const s of seats) obsRows.push(fullObs.subarray(s * OBS_DIM, (s + 1) * OBS_DIM));
+            const validRows = seats.map((s) => valid.subarray(s * N_ACTIONS, (s + 1) * N_ACTIONS));
             const acts = actBatch(w, obsRows, validRows, EVAL_EPSILON, this.modelRngs.get(arm) as Rng);
             seats.forEach((s, k) => (actions[s] = acts[k]));
         }
         if (playerAction !== null && this.playerSlot !== null)
             actions[this.playerSlot] = playerAction.action;
 
-        // 目标二选（stage_b 口径：df 专用分支，其余均匀——玩家显式目标已校验）
+        // 目标二选（stage_b_v24 口径：df 专用分支，其余均匀——玩家显式目标已校验）。
+        // v2.4 目标请求集 = INVADE/STRIKE/BOTHER/OBSERVE（模型/预制对手的观测与揭露亦带目标）
+        const TARGET_ACTIONS: number[] = [A_BOTHER, A_INVADE, A_STRIKE, A_OBSERVE];
         const tmask = env.selectTargets(actions);
         const targets = new Int32Array(n).fill(-1);
         for (let i = 0; i < n; i++) {
             const a = actions[i];
-            if (a !== 4 && a !== 6) continue;
+            if (!TARGET_ACTIONS.includes(a)) continue;
             const cand: number[] = [];
             for (let j = 0; j < n; j++) if (tmask[i * n + j]) cand.push(j);
             if (cand.length === 0) continue;
@@ -213,7 +231,7 @@ export class SoloMatch {
         }
 
         const invaded = env.beginTick(actions, targets);
-        // 受入侵 AI 立即重选（stage_b.py:55-61）；玩家待模态
+        // 受入侵 AI 立即重选（stage_b_v24.py:55-61）；玩家待模态
         const re = Int32Array.from(actions);
         if (invaded.length > 0) {
             const reValid = env.valid();
@@ -226,14 +244,18 @@ export class SoloMatch {
                     const w = this.weights.get(id) as ModelWeights;
                     const act = actBatch(
                         w,
-                        [reObs.subarray(v * 38, (v + 1) * 38)],
-                        [reValid.subarray(v * 10, (v + 1) * 10)],
+                        [reObs.subarray(v * OBS_DIM, (v + 1) * OBS_DIM)],
+                        [reValid.subarray(v * N_ACTIONS, (v + 1) * N_ACTIONS)],
                         EVAL_EPSILON,
                         this.modelRngs.get(id) as Rng,
                     );
                     re[v] = act[0];
                 } else {
-                    re[v] = heuristicAction(id as PresetKind, reValid.subarray(v * 10, (v + 1) * 10), this.presetRng);
+                    re[v] = heuristicAction(
+                        id as PresetKind,
+                        reValid.subarray(v * N_ACTIONS, (v + 1) * N_ACTIONS),
+                        this.presetRng,
+                    );
                 }
             }
         }

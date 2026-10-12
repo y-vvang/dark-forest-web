@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { V23_CONFIG } from "@/lib/engine/config";
+import { V24_CONFIG } from "@/lib/engine/config";
 import { ScriptedRng } from "@/lib/engine/rng";
 import type { EndView } from "./match";
 import { SoloMatch as Match } from "./match";
@@ -18,7 +18,7 @@ function baseEnvRng(fill = 0.01) {
 }
 
 test("start: queued ghost tick until player birth (ordinal 4), then awaiting-action", () => {
-    const m = new Match(7, ["pacifist"], new Map(), { envRng: baseEnvRng() });
+    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
     expect(m.phase).toBe("queued");
     m.start();
     expect(m.playerSlot).toBe(4);
@@ -28,7 +28,7 @@ test("start: queued ghost tick until player birth (ordinal 4), then awaiting-act
 });
 
 test("submitAction guards: wrong phase / invalid action / after end all throw", () => {
-    const m = new Match(7, ["pacifist"], new Map(), { envRng: baseEnvRng() });
+    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
     m.start();
     expect(() => m.submitRechoice(0)).toThrow(/phase/); // awaiting-action 下不可重选
     expect(() => m.submitAction(4, -1)).toThrow(/invalid/); // tech≈2.5 无已知 → STRIKE 非法
@@ -36,7 +36,7 @@ test("submitAction guards: wrong phase / invalid action / after end all throw", 
     m.submitAction(0, -1); // SILENT
     expect(m.env.t).toBe(t0 + 1);
     // 强制终局（env 公开为测试接缝）
-    const m2 = new Match(7, ["pacifist"], new Map(), { envRng: baseEnvRng() });
+    const m2 = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
     m2.env.alive.fill(0);
     m2.env.pending_spawns[0] = 9999;
     m2.start();
@@ -53,7 +53,7 @@ test("player invaded → awaiting-rechoice; counter-invade → mutual death (Q9)
         [1, 1, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 4],
         0.5,
     );
-    const m = new Match(7, ["random"], new Map(), { envRng: baseEnvRng(), presetRng });
+    const m = new Match(7, ["random"], new Map(), V24_CONFIG, { envRng: baseEnvRng(), presetRng });
     m.start(); // t0：出生 slot4
     m.submitAction(1, -1); // t1：DEVELOP（非静默，slot0 刻中探测到玩家）
     expect(m.phase).toBe("awaiting-action");
@@ -71,11 +71,11 @@ test("player invaded → awaiting-rechoice; counter-invade → mutual death (Q9)
 
 test("re-choose BD cancels the invasion; cancel keeps the original action", () => {
     const mk = () =>
-        new Match(7, ["random"], new Map(), {
+        new Match(7, ["random"], new Map(), V24_CONFIG, {
             envRng: baseEnvRng(),
             presetRng: new ScriptedRng([1, 1, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 4], 0.5),
         });
-    // 黑域取消：玩家 BD 须合法（tech>5）——出生科技≈0.01（脚本原样），经 env 接缝上调
+    // 黑域取消：玩家 BD 须合法（tech>5）——出生科技 1.0（v2.4 无继承——恒 techSpawnLo），经 env 接缝上调
     const m1 = mk();
     m1.start();
     m1.env.tech[4] = 6;
@@ -99,9 +99,9 @@ test("re-choose BD cancels the invasion; cancel keeps the original action", () =
 });
 
 test("won: alive at t_max", () => {
-    const m = new Match(7, ["pacifist"], new Map(), { envRng: baseEnvRng() });
+    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
     m.start();
-    m.env.t = V23_CONFIG.tMax - 2; // 接缝：直接推到末两刻
+    m.env.t = V24_CONFIG.tMax - 2; // 接缝：直接推到末两刻
     m.submitAction(0, -1);
     m.submitAction(0, -1);
     expect(m.phase).toBe("ended");
@@ -115,7 +115,7 @@ test("stats: own strike kill + invade loot accumulate from info (rule ①)", () 
     // fill=0.025：探测火（< p_row≈0.03+）而流失不触发（≥0.02）——res 保持 10，loot 恰 5。
     // presetRng fill=0.3：pacifist 恒 DEVELOP（非静默 → 玩家可探测到全部 AI）。
     // 玩家经接缝上调 tech=9 → STRIKE/INVADE 合法。
-    const m = new Match(7, ["pacifist"], new Map(), {
+    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, {
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -131,4 +131,43 @@ test("stats: own strike kill + invade loot accumulate from info (rule ①)", () 
     expect(m.stats().loot).toBe(5);
     expect(m.stats().kills).toBe(2);
     expect(m.env.alive[2]).toBe(0);
+});
+
+test("v2.4: cfg injection — custom tMax ends the run at 20 (won, not 250)", () => {
+    const m = new Match(7, ["pacifist"], new Map(), { ...V24_CONFIG, tMax: 20 }, { envRng: baseEnvRng() });
+    m.start();
+    for (let i = 0; i < 30 && m.phase !== "ended"; i++) m.submitAction(0, -1);
+    expect(m.phase).toBe("ended");
+    expect(m.env.t).toBe(20);
+    expect(m.getEnd()!.kind).toBe("won");
+});
+
+test("v2.4: submitAction guards BOTHER target (reveal needs explicit candidate)", () => {
+    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, {
+        envRng: baseEnvRng(0.025),
+        presetRng: new ScriptedRng([], 0.3),
+    });
+    m.start();
+    m.env.tech[4] = 6; // 广播门（tech>1）
+    m.submitAction(1, -1); // 刻中探测 → known[4, 1..3]
+    expect(() => m.submitAction(3, -1)).toThrow(/reveal/); // 揭露无兜底：必须显式目标
+    expect(() => m.submitAction(3, 1)).not.toThrow(); // 合法候选 → 揭露入队
+    expect(m.env.pending_reveal.some((e) => e[0] === "other" && e[1] === 1)).toBe(true);
+    m.submitAction(0, -1); // 结算：slot1 全场公开
+    expect(m.env.public_[1]).toBe(1);
+    expect(m.env.public_[4]).toBe(0); // 发送者不暴露
+});
+
+test("v2.4: OBSERVE takes explicit target; -1 falls back to nearest known", () => {
+    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, {
+        envRng: baseEnvRng(0.025),
+        presetRng: new ScriptedRng([], 0.3),
+    });
+    m.start();
+    m.env.tech[4] = 6; // OBSERVE 门 tech>5
+    m.submitAction(1, -1);
+    m.submitAction(7, 2); // 显式观测 slot2
+    expect(m.env.observed[4 * 36 + 2]).toBe(1);
+    m.submitAction(7, -1); // 无目标 → 最近已知（全同点平手取先 = slot0——探测亦发现 0）
+    expect(m.env.observed[4 * 36 + 0]).toBe(1);
 });

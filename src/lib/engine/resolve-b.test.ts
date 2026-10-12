@@ -152,35 +152,125 @@ test("STRIKE without valid explicit target falls back to nearest known (argmin t
     expect(result.info.strike_events[0][1]).toBe(1);
 });
 
-test("STRIKE_WEAK → min tech known; STRIKE_STRONG → max tech known", () => {
+// ---- v2.4：BROADCAST_OTHER（揭露）与 OBSERVE 显式目标 ----
+
+test("BOTHER reveal: target public+known to all next tick, sender NOT exposed (env2_v24.py:457-472)", () => {
     const env = makeEnv();
+    env.reset();
+    env.tech[0] = 6; // 广播门 tech>1
+    env.known[0 * 36 + 1] = 1; // 0 揭露 1
+    const actions = new Int32Array(36);
+    actions[0] = 3; // BOTHER
+    const targets = new Int32Array(36).fill(-1);
+    targets[0] = 1;
+    const { result } = tick(env, actions, targets);
+    expect(env.pending_reveal).toEqual([["other", 1]]); // 本刻入队
+    expect(result.rewards[0]).toBe(0); // 默认 attack_reward=0
+    tick(env, new Int32Array(36)); // 结算
+    expect(env.public_[1]).toBe(1); // 目标全场公开
+    expect(env.known[2 * 36 + 1]).toBe(1); // 存活者获知目标坐标
+    expect(env.known[3 * 36 + 1]).toBe(1);
+    expect(env.public_[0]).toBe(0); // 发送者不暴露
+    expect(env.known[1 * 36 + 0]).toBe(0); // 目标也不知道是谁揭露的（归因歧义=机制）
+});
+
+test("BOTHER without explicit target: no reveal queued, no reward (env2_v24.py:468-472)", () => {
+    const env = makeEnv([], 0.5, { attackReward: 0.5 });
+    env.reset();
+    env.tech[0] = 6;
+    env.known[0 * 36 + 1] = 1;
+    const actions = new Int32Array(36);
+    actions[0] = 3; // 无目标（-1）
+    const { result } = tick(env, actions);
+    expect(env.pending_reveal).toEqual([]);
+    expect(result.rewards[0]).toBe(0);
+});
+
+test("BOTHER reveal pays attack_reward; strike kill / invasion kill too (reward arms, env2_v24.py:472/508/548)", () => {
+    const env = makeEnv([], 0.5, { attackReward: 0.5 });
+    env.reset();
+    env.tech[0] = 6;
+    env.known[0 * 36 + 1] = 1;
+    const actions = new Int32Array(36);
+    actions[0] = 3;
+    const targets = new Int32Array(36).fill(-1);
+    targets[0] = 1;
+    const { result } = tick(env, actions, targets);
+    expect(result.rewards[0]).toBe(0.5); // 揭露赏金
+    expect(result.rewardDetail.attackCount[0]).toBe(1); // TS-only 诊断
+});
+
+test("strike kill pays attack_reward (first claimant only)", () => {
+    const env = makeEnv([], 0.5, { attackReward: 0.5 });
     env.reset();
     env.pending_spawns[0] = 9999;
     env.known[0 * 36 + 1] = 1;
-    env.known[0 * 36 + 2] = 1;
-    env.known[0 * 36 + 3] = 1;
-    env.tech[0] = 9;
-    env.tech[1] = 5;
-    env.tech[2] = 3;
-    env.tech[3] = 9.5;
+    env.tech[0] = 8;
+    env.tech[1] = 1;
     const actions = new Int32Array(36);
-    actions[0] = 8; // WEAK
-    const r1 = tick(env, actions);
-    expect(r1.result.info.strike_events[0][1]).toBe(2); // tech 3 最弱
-    const env2_ = makeEnv();
+    actions[0] = 4;
+    const targets = new Int32Array(36).fill(-1);
+    targets[0] = 1;
+    const { result } = tick(env, actions, targets);
+    expect(result.rewards[0]).toBeCloseTo(0.5, 12);
+    expect(result.rewardDetail.attackCount[0]).toBe(1);
+    expect(result.rewardDetail.techTerm[0]).toBe(0); // 非 DEVELOP 刻无津贴
+});
+
+test("invasion kill pays attack_reward to surviving invader; mutual destruction pays none (env2_v24.py:548)", () => {
+    const env = makeEnv([], 0.5, { attackReward: 0.5 });
+    env.reset();
+    env.pending_spawns[0] = 9999;
+    env.known[0 * 36 + 1] = 1;
+    const actions = new Int32Array(36);
+    actions[0] = 6;
+    const targets = new Int32Array(36).fill(-1);
+    targets[0] = 1;
+    const { result } = tick(env, actions, targets); // 单向入侵：0 幸存缴获
+    expect(result.rewards[0]).toBeCloseTo(0.5, 12);
+    expect(result.rewardDetail.attackCount[0]).toBe(1);
+
+    const env2_ = makeEnv([], 0.5, { attackReward: 0.5 });
     env2_.reset();
     env2_.pending_spawns[0] = 9999;
     env2_.known[0 * 36 + 1] = 1;
-    env2_.known[0 * 36 + 2] = 1;
-    env2_.known[0 * 36 + 3] = 1;
-    env2_.tech[0] = 9;
-    env2_.tech[1] = 5;
-    env2_.tech[2] = 3;
-    env2_.tech[3] = 9.5;
-    const actions2 = new Int32Array(36);
-    actions2[0] = 9; // STRONG
-    const r2 = tick(env2_, actions2);
-    expect(r2.result.info.strike_events[0][1]).toBe(3); // tech 9.5 最强
+    env2_.beginTick(actions, targets);
+    const re = Int32Array.from(actions);
+    re[1] = 6; // 反咬 → 互毁：killer 同刻死 → 无缴获即无赏金
+    const r1 = tick(env2_, actions, targets, re);
+    expect(r1.result.rewards[0]).toBe(-10); // 互毁仅死亡罚，无 +0.5 赏金
+    expect(r1.result.rewards[1]).toBe(-10);
+    expect(r1.result.rewardDetail.attackCount[0]).toBe(0);
+});
+
+test("OBSERVE explicit target overrides nearest (env2_v24.py:565-569)", () => {
+    const env = makeEnv();
+    env.reset();
+    env.pending_spawns[0] = 9999;
+    env.tech[0] = 6;
+    env.known[0 * 36 + 1] = 1;
+    env.known[0 * 36 + 2] = 1; // 全同点：最近=1（平手取先）
+    const actions = new Int32Array(36);
+    actions[0] = 7;
+    const targets = new Int32Array(36).fill(-1);
+    targets[0] = 2; // 显式选 2
+    tick(env, actions, targets);
+    expect(env.observed[0 * 36 + 2]).toBe(1);
+    expect(env.observed[0 * 36 + 1]).toBe(0);
+});
+
+test("OBSERVE without target falls back to nearest known", () => {
+    const env = makeEnv();
+    env.reset();
+    env.pending_spawns[0] = 9999;
+    env.tech[0] = 6;
+    env.known[0 * 36 + 1] = 1;
+    env.known[0 * 36 + 2] = 1;
+    const actions = new Int32Array(36);
+    actions[0] = 7;
+    tick(env, actions); // 无目标
+    expect(env.observed[0 * 36 + 1]).toBe(1); // 最近（平手取先）
+    expect(env.observed[0 * 36 + 2]).toBe(0);
 });
 
 test("two strikers one victim: first kill recorded once, second still rolls an event", () => {

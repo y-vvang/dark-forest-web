@@ -8,6 +8,7 @@ import {
     type ActionId,
     type PendingAction,
 } from "@/components/action-grid";
+import { AuxButtons } from "@/components/aux-buttons";
 import { EndOverlay } from "@/components/end-overlay";
 import { EventLog } from "@/components/event-log";
 import { InvasionModal } from "@/components/invasion-modal";
@@ -24,13 +25,17 @@ const ARMED_NUM: Record<ActionId, number> = {
     silent: ACTION_NUM.silent,
     develop: ACTION_NUM.develop,
     broadcast: ACTION_NUM.broadcast,
+    reveal: ACTION_NUM.reveal,
     observe: ACTION_NUM.observe,
     domain: ACTION_NUM.domain,
     invade: ACTION_NUM.invade,
     strike: ACTION_NUM.strike,
-    strikeWeak: ACTION_NUM.strikeWeak,
-    strikeStrong: ACTION_NUM.strikeStrong,
 };
+
+/** 目标武装集（v2.4）：strike/observe 有最近已知兜底；invade/reveal 必须显式目标 */
+const TARGETING: ReadonlySet<ActionId> = new Set(["strike", "invade", "reveal", "observe"]);
+/** 有「跳过=最近已知」兜底的两动作（env2_v24.py:489-491/567-569） */
+const SKIPPABLE: ReadonlySet<ActionId> = new Set(["strike", "observe"]);
 
 /** useSearchParams 必须包 Suspense（Next 16 预渲染要求）——外壳负责边界 */
 export default function MatchPage() {
@@ -90,7 +95,7 @@ function MatchConsole() {
                 m.state === "public" ||
                 m.state === "domain",
         );
-    const targeting = armed === "strike" || armed === "invade";
+    const targeting = armed !== null && TARGETING.has(armed);
 
     const onSelect = (id: ActionId) => {
         if (id === "silent" || id === "develop") {
@@ -148,11 +153,11 @@ function MatchConsole() {
                 <div className="flex items-center justify-between rounded-panel border border-lethal bg-panel px-3 py-2">
                     <p className="text-sm text-lethal">{t("match.target")}</p>
                     <div className="flex gap-2">
-                        {armed === "strike" && (
+                        {armed !== null && SKIPPABLE.has(armed) && (
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setPending({ id: "strike", target: -1 }); // 最近已知兜底
+                                    setPending({ id: armed, target: -1 }); // 最近已知兜底
                                     setArmed(null);
                                 }}
                                 className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
@@ -171,7 +176,7 @@ function MatchConsole() {
                 </div>
             )}
 
-            <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_540px]">
                 <div className="mx-auto w-full max-w-[min(720px,calc(100svh-20rem))]">
                     <StarChart
                         civs={v.markers}
@@ -181,11 +186,14 @@ function MatchConsole() {
                     />
                 </div>
                 <div className="flex flex-col gap-3">
+                    <AuxButtons reward={v.reward} onAdvise={session.advise} />
                     {v.self !== null ? (
                         <StatusPanel
                             tech={v.self.tech}
                             res={v.self.res}
                             inDomain={v.self.inDomain}
+                            gates={[v.panel.gateObserveTech, v.panel.gateStrikeTech]}
+                            resMax={v.panel.resMax}
                         />
                     ) : (
                         <div className="rounded-panel border border-subtle bg-panel px-3 py-4 text-center">
@@ -206,6 +214,7 @@ function MatchConsole() {
                         onArm={setArmed}
                         onExecute={onExecute}
                         executeDisabled={executeDisabled}
+                        cfg={v.cfg}
                     />
                 </div>
             </div>
@@ -221,11 +230,15 @@ function MatchConsole() {
                     onCancel={() => session.cancelRechoice()}
                     domainDisabled={!v.valid[5]}
                     domainTitle={
-                        !v.valid[5] ? t("actions.disabled.tech", { v: 5 }) : undefined
+                        !v.valid[5]
+                            ? t("actions.disabled.tech", { v: v.cfg.gateDomainTech })
+                            : undefined
                     }
                 />
             )}
-            {v.end !== null && <EndOverlay end={v.end} />}
+            {v.end !== null && (
+                <EndOverlay end={v.end} advised={session.advised} tMax={v.tMax} />
+            )}
         </div>
     );
 }

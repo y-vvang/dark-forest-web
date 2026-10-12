@@ -1,7 +1,10 @@
 /**
- * v2.3-fix 环境参数（权威：experiment/experiment/config_v23.yaml env 节，
- * 装配口径同 data2.py:38-64）。数值零偏离——改动即违背一致性硬要求。
- * 种子不经配置传递：Rng 在构造期注入（见 rng.ts / game-mechanics.md §2.2）。
+ * v2.4 环境参数（权威：experiment/experiment/config_v24.yaml env 节，
+ * 装配口径同 data2_v24.py:38-67）。数值零偏离——改动即违背一致性硬要求。
+ * v2.4 vs v2.3-fix：techSpawnLo=Hi=1.0（禁科技继承，出生科技恒 1.0）+ 新增
+ * resRewardScale/attackReward 两奖励臂参数（默认 0=关；四臂 override 见
+ * runs/v24_arms/<arm>/config.yaml）。种子不经配置传递：Rng 在构造期注入
+ * （见 rng.ts / game-mechanics.md §2.2）。
  */
 export interface EnvConfig {
     nAgents: number;
@@ -35,15 +38,19 @@ export interface EnvConfig {
     bdGrowthMult: number;
     bdExplosionMult: number;
     enableBlackDomain: boolean;
-    /** [tick, count]——v2.3 恒 [[0, 4]]：初始 4 席，此后全部内生出生 */
+    /** [tick, count]——v2.4 恒 [[0, 4]]：初始 4 席，此后全部内生出生 */
     spawnSchedule: [number, number][];
     resTotalBudget: number;
     shieldCostFrac: number;
     softsignA: number;
     softsignRewardScale: number;
+    /** v2.4 奖励臂：DEVELOP 刻 + scale·res（默认 0=关） */
+    resRewardScale: number;
+    /** v2.4 奖励臂：打击击杀/入侵缴获/揭露目标 各 +attack（默认 0=关） */
+    attackReward: number;
 }
 
-export const V23_CONFIG: EnvConfig = {
+export const V24_CONFIG: EnvConfig = {
     nAgents: 36,
     world: 100.0,
     detectRadius: 30.0,
@@ -54,8 +61,8 @@ export const V23_CONFIG: EnvConfig = {
     pExplosion: 0.01,
     developRate: 0.05,
     techCap: 1_000_000.0,
-    techSpawnLo: 0.5,
-    techSpawnHi: 10.0,
+    techSpawnLo: 1.0,
+    techSpawnHi: 1.0,
     killBase: 0.55,
     killTechSlope: 0.12,
     resMin: 5.0,
@@ -79,4 +86,17 @@ export const V23_CONFIG: EnvConfig = {
     shieldCostFrac: 0.5,
     softsignA: 0.2,
     softsignRewardScale: 0.01,
+    resRewardScale: 0.0,
+    attackReward: 0.0,
+};
+
+/**
+ * v2.4 四奖励臂的环境参数 override（权威：experiment/runs/v24_arms/<arm>/config.yaml
+ * env 节）。游戏层奖励展示/开局配置的臂预设共用此表。
+ */
+export const V24_ARMS: Record<string, Partial<EnvConfig>> = {
+    a_classic: {},
+    b_terminal: { softsignRewardScale: 0.0, bdEntryPenalty: 0.0 },
+    c_res: { resRewardScale: 0.0025 },
+    d_malintent: { resRewardScale: 0.0025, attackReward: 0.5 },
 };

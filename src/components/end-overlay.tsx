@@ -21,8 +21,9 @@ function isDeadCause(c: string): c is DeadCause {
  * End-of-match overlay (DESIGN.md §10.8). No last-man-standing victory
  * exists in this world — surviving to tick 250 IS the win. Third state
  * (2026-10-02): the player died before their own birth (world heat death).
+ * `advised`（2026-10-10 模型参谋）：用过即披露一行——AI 辅助 = 非独立生存（诚实标记）。
  */
-export function EndOverlay({ end }: { end: EndView }) {
+export function EndOverlay({ end, advised, tMax }: { end: EndView; advised?: boolean; tMax?: number }) {
     const { t } = useI18n();
 
     return (
@@ -47,7 +48,7 @@ export function EndOverlay({ end }: { end: EndView }) {
                     <>
                         <h2 className="text-xl text-self">{t("end.alive.title")}</h2>
                         <p className="tnum mt-2 text-base text-dim">
-                            {t("end.alive.body", { n: end.nAlive })}
+                            {t("end.alive.body", { t: tMax ?? 250, n: end.nAlive })}
                         </p>
                     </>
                 ) : (
@@ -55,6 +56,9 @@ export function EndOverlay({ end }: { end: EndView }) {
                         <h2 className="text-xl text-dim">{t("end.unborn.title")}</h2>
                         <p className="mt-2 text-base text-dim">{t("end.unborn.body")}</p>
                     </>
+                )}
+                {advised === true && (
+                    <p className="mt-3 text-xs text-faint">{t("end.advisorUsed")}</p>
                 )}
 
                 <div className="mt-6 grid gap-2">

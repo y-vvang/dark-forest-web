@@ -1,88 +1,56 @@
-import type { CSSProperties, ReactNode } from "react";
-
-import {
-    clampPopoverIntoViewport,
-    useAutoPopover,
-} from "./use-auto-popover";
-
 /**
- * Selectable opponent card (DESIGN.md §10.10) with a native-Popover detail
- * panel. The full info used to overflow the grid card, so the card keeps the
- * compact readouts (title / meta / stat) and the prose description lives in
- * the popover.
+ * Selectable opponent card（DESIGN.md §10.10；2026-10-10 用户修订）——**内联详情，无浮层**。
  *
- * Interaction contract (shared with every other detail surface via
- * useAutoPopover): hover/focus → unpinned preview; click → select the
- * opponent AND pin/unpin the popover; `popover="auto"` ⇒ Escape + light
- * dismiss + only one popover open document-wide.
- *
- * Positioning lives in `.opp-popover` (globals.css): wrapper-relative
- * absolute baseline, upgraded to CSS anchor positioning with
- * position-try-fallbacks where supported, plus the translate clamp on open
- * (clampPopoverIntoViewport). The polyfill itself is imported once in
- * client-layout.tsx.
+ * 原 popover 与点击选择存在交互冲突（点击既选中又钉浮层），用户裁定弃用：
+ * 详情四件套全部内联进卡片——标题（预制 = i18n 风格名 / 模型 = 臂 id mono 技术记号）、
+ * meta 行（600ep · seed 42）、奖励参数行（mono，自 V24_ARMS 推导）、动作画像一句
+ * （i18n prose——替代原胜率罗列：数字为相对口径，具误导性）。
+ * hover 仅升边；点击 = 选中/取消选择，`aria-pressed` 表达状态。
  */
+import type { ReactNode } from "react";
+
 export function OpponentCard({
     value,
     selected,
     onSelect,
     title,
     meta,
+    override,
     desc,
-    stat,
 }: {
     /** selection payload (preset kind or model id) */
     value: string;
     selected: boolean;
     onSelect: (value: string) => void;
     title: ReactNode;
+    /** mono 读数行（600ep · seed 42） */
     meta?: ReactNode;
+    /** mono 奖励参数行（soft 0.01 · bd 0.5 · +attack 0.5；预制无此行） */
+    override?: ReactNode;
+    /** 动作画像 prose（i18n） */
     desc?: ReactNode;
-    stat?: ReactNode;
 }) {
-    const { anchorRef, popoverRef, togglePinned, hoverHandlers } =
-        useAutoPopover(clampPopoverIntoViewport);
-
-    const anchorName = `--opp-${value}`;
-
     return (
-        <div className="relative w-full">
-            <button
-                ref={anchorRef}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => {
-                    onSelect(value);
-                    togglePinned();
-                }}
-                {...hoverHandlers}
-                style={{ anchorName } as CSSProperties}
-                className={`flex min-h-20 w-full flex-col items-start justify-center gap-1 rounded-panel border p-3 text-left ${
-                    selected
-                        ? "border-strong bg-raised"
-                        : "border-subtle bg-panel hover:border-strong hover:bg-raised"
-                }`}
-            >
-                <span className="flex w-full items-baseline justify-between gap-2">
-                    <span className="text-sm font-bold text-ink">{title}</span>
-                    {meta !== undefined && <span className="tnum text-xs text-dim">{meta}</span>}
-                </span>
-                {stat !== undefined && <span className="tnum text-xs text-ink">{stat}</span>}
-            </button>
-
-            <div
-                ref={popoverRef}
-                popover="auto"
-                style={{ positionAnchor: anchorName } as CSSProperties}
-                className="opp-popover rounded-panel border border-subtle bg-panel p-4"
-            >
-                <p className="text-sm font-bold text-ink">{title}</p>
-                {meta !== undefined && <p className="tnum mt-1 text-xs text-dim">{meta}</p>}
-                {desc !== undefined && (
-                    <p className="mt-2 font-sans text-sm leading-6 text-dim">{desc}</p>
-                )}
-                {stat !== undefined && <p className="tnum mt-2 text-xs text-ink">{stat}</p>}
-            </div>
-        </div>
+        <button
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onSelect(value)}
+            className={`flex min-h-20 w-full flex-col items-start justify-center gap-1 rounded-panel border p-3 text-left ${
+                selected
+                    ? "border-strong bg-raised"
+                    : "border-subtle bg-panel hover:border-strong hover:bg-raised"
+            }`}
+        >
+            <span className="flex w-full items-baseline justify-between gap-2">
+                <span className="text-sm font-bold text-ink">{title}</span>
+                {meta !== undefined && <span className="tnum text-xs text-dim">{meta}</span>}
+            </span>
+            {override !== undefined && (
+                <span className="tnum text-xs text-dim">{override}</span>
+            )}
+            {desc !== undefined && (
+                <p className="font-sans text-xs leading-5 text-dim">{desc}</p>
+            )}
+        </button>
     );
 }
