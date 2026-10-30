@@ -48,6 +48,10 @@ export interface EnvConfig {
     resRewardScale: number;
     /** v2.4 奖励臂：打击击杀/入侵缴获/揭露目标 各 +attack（默认 0=关） */
     attackReward: number;
+    /** **对实验的明示偏离（仅在线多生命世界开启）**：36 槽耗尽后允许复用已死槽
+     *  重生（env2_v24 硬上限 = 单局 36 次出生；金标准轨迹实证暴力世界会耗尽）。
+     *  缺省/undefined = false = 忠实 v2.4。 */
+    slotReuse?: boolean;
 }
 
 export const V24_CONFIG: EnvConfig = {

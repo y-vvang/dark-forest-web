@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `experiment/` —— **只读参考**：已完成的"黑暗森林法则多智能体强化学习验证"实验（纯 Python/numpy，
   Double-DQN 自博弈，v1.0→v2.4 十个轮次；现为**符号链接指向的 git 仓库**，用户 2026-10-10 变更，
   便于追踪实验变化）。**禁止改动此目录下任何文件**；游戏所需的 checkpoint 等数据以复制/引用方式取用；
-  Python 运行后须清理其 `__pycache__`。
+  Python 运行后无须清理其 `__pycache__`，因为其已添加至 gitignore。
 - 仓库根 —— 游戏本体（Next.js + TypeScript，待开发）。
 
 游戏定义（用户 2026-09-29 原始需求，勿走样）：
@@ -96,7 +96,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 环境模型速查（v2.4；完整移植规格见 docs/env-model-v23.md）
 
 - **世界**：[0,100)² **连续坐标**环面（"Grid"是历史名称，并非离散网格）；36 个**一次性**槽位
-  （出生槽不复用，单局最多 36 次出生）；定长 250 刻结算；资源总预算 150 逐刻守恒
+  （出生槽不复用，单局最多 36 次出生；**在线多生命世界例外**：`ONLINE_ENV_CONFIG.slotReuse`
+  使 36 槽耗尽后复用已死槽——对实验的明示偏离，缺省世界保持忠实，2026-10-14）；定长 250 刻结算；资源总预算 150 逐刻守恒
   （`总量 − Σ存活资源 − 自由池 ≡ 0`，以 info 字段报告残差而非 assert）。
 - **出生**：初始 4 文明（tech 恒 =tech_spawn_lo=1.0、res~U[5,20] 超预算则按比例缩放）；此后恒有
   **一个**预滚的下次出生资源 U[5,20]，自由池攒够即诞生（每刻至多 1 个、取最靠前空槽）。**v2.4
@@ -178,9 +179,10 @@ PYTHONUTF8=1 python3 smoke_v24.py                           # v2.4 冒烟
 
 # 游戏（仓库根，bun；已验证 2026-10-11 v2.4 同步轮）
 bun run dev        # 开发服务器
-bun run build      # 生产构建（4 路由静态预渲染）
+bun run build      # 生产构建（/ 等页面静态预渲染 + 4 个 /api/online/* 路由动态）
 bun run check      # typegen + eslint + tsc --noEmit（zh 词典完整性由 tsc 编译保证）
-bun test           # 全部测试（引擎金标准回放/argsort 矢量 + 对手奇偶 + 会话/感知/门 parity/奖励/配置；142 用例 ~800ms）
+bun test           # 全部测试（引擎金标准回放/argsort 矢量 + 对手奇偶 + 单机会话/感知/门 parity/奖励/配置 + 在线层记录/驱动/窗口机器/服务；214 用例 ~1.4s）
+bun run purge:online  # 手动清 Upstash 在线命名空间 df:online:*（dev 卫生；产线世界持久永不清）
 
 # 金标准与模型资产的再生成（开发期 Python，只读引用 experiment/ 的 *_v24 模块）
 PYTHONUTF8=1 python3 scripts/golden/record_golden.py        # 7 轨迹 + stats.json → src/lib/engine/testdata/
@@ -212,6 +214,7 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 |---|---|
 | `docs/env-model-v23.md` | **v2.4** 环境完整移植规格（已升版 2026-10-11：参数/状态/出生/动作/公式/结算顺序/观测/事件流/RNG 策略/Q13-Q14/四臂奖励）——文件名保留 v23 属历史命名 |
 | `docs/ai-opponents.md` | DQN 推理移植（36/8）+ 预制策略精确规则 + v2.4 四奖励臂清单与画像 |
+| `docs/online-architecture.md` | **在线模式架构**（2026-10-14）：tick-in-flight 时序模型、确定性重演持久化（WorldRecord/花名册/配对档案）、Upstash 键布局与带宽预算（idx 微型 GET + 实例缓存）、AI 决策平价披露、线协议、已接受边界、模块地图。做在线模式任何工作前先读它 |
 | `docs/game-mechanics.md` | **游戏机制阶段设计**（2026-10-01，v1.0）：模块架构（engine/opponents/solo 分层）、Rng 接口（uniform/choice）+ 录制-回放金标准、5 点验收门的测试落地、模型预转换 JSON 管线、单机会话层（座位分配/玩家出生/逐刻循环）、**玩家感知过滤规则表**（严格忠实口径）、里程碑 M1-M5。做引擎/对手/会话任何工作前先读它 |
 | `DESIGN.md`（v0.2 已建） | UI 设计系统：方向/原则/令牌（v0.1）+ 双语词汇表 §7 + 组件规格 §10 + 五屏线框 §11 + i18n 规范 §12（无手动语言开关）+ 时序模型 §13（单机每刻暂停 / 在线定时刻长）。**写任何 HTML 前须先经它** |
 | `experiment/README.md`、`experiment/INDEX.md` | 实验总览与目录地图 |
@@ -227,11 +230,15 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 2. `DESIGN.md`（v0.2 完成 2026-09-30；2026-10-09/10-10 UX 轮 + v2.4 词汇/组件规格增补）→
    3. HTML 原型（**已完成 2026-09-30**）→ 4. 对手接入（**已完成 2026-10-02**；v2.4 化 2026-10-11：
    DQN 4 臂前向奇偶 + 预制 8 动作集 + 单机会话与感知过滤含揭露规则⑫）→
-5. 在线模式（排队/共享世界/轮询或 SSE，模式 b；`/online` 仍为 mock 大厅）→
-6. Vercel 部署与缓存策略（`/models/*` immutable 头已就位）。
+5. 在线模式（**已完成 2026-10-14**：共享世界 + 排队 + 轮询——tick-in-flight 时序（beginTick 开窗/resolve 关窗）、确定性重演持久化（记录只存人类输入）、Upstash Redis 存储（EVAL 原子 CAS/锁、心跳独立键）、服务端感知过滤（view.ts 适配器复用）、四臂轮替 AI 居民、追赶/心跳剪除/世界滚动；机制文档 `docs/online-architecture.md`）。2026-10-14
+   round-2（用户裁定：AI 一等公民/多次进出重排）：**无快进**（刻长恒定，仅无人且队空惰性冲刺）、
+   行动格执行钮移除（选择即提交 + 刻末 2s 安全网，silent 未提交不发包）、**槽复用**
+   （`ONLINE_ENV_CONFIG.slotReuse`——对 v2.4 的明示偏离，缺省关闭保金标准忠实；tracker
+   感知缓存随 known 列重置清除）、**死席再排队 = 每命一新 token**（服务端换发，配对档案恒一致）→
+6. Vercel 部署与缓存策略（`/models/*` immutable 头已就位；在线 API 已是 force-dynamic + no-store，待整体部署验证：Upstash env 在 Vercel 配置、函数时限内冷重演 ~0.5s）。
 每阶段完成后更新 CLAUDE.md 的命令与状态。
 
-落地备忘（2026-09-30 原型阶段；2026-10-02 机制阶段；2026-10-11 v2.4 同步轮更新）：
+落地备忘（2026-09-30 原型阶段；2026-10-02 机制阶段；2026-10-11 v2.4 同步轮；2026-10-14 在线模式轮）：
 
 - **游戏机制分层**（docs/game-mechanics.md §1）：`src/lib/engine/`（纯 TS 环境，零 React；
   numpy-sort.ts = argsort 逐位移植）→ `src/lib/opponents/`（dqn.ts 前向+actBatch+act /
@@ -245,6 +252,7 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
   §7——他人间交锋/被观测反曝光/被打击幸存/**被揭露**均不渲染，规则①-⑫）在 ViewTracker 内完成，**组件层禁止直读
   env/SoloMatch**。ViewTracker 契约：每刻至少一次 update()。日志 `params.cause` 携带 cause.* 键名，
   由 EventLog 嵌套翻译。
+- **在线模式分层**（2026-10-14，docs/online-architecture.md）：`src/lib/online/`（record/driver/hub/service/store（memory+upstash）/http/server/use-online-world）+ `src/app/api/online/{queue,state,action,rechoice}`。世界记录**只存人类输入**（种子+逐刻提交/重选+花名册+**加入时刻**+配对），载入全量重演（AI 动作确定性推导）；锁/键/心跳见架构文档 §3；驱动测试接缝 = afterResolve（resolve 后、beginTick 前）与 stashBasisTick（决策基线）。
 - **模型资产**：`public/models/<arm>.json`（**v2.4 四臂**：a_classic/b_terminal/c_res/d_malintent，
   npz 预转换，Python float repr↔JSON.parse 逐位往返），next.config 已挂 immutable 长缓存，运行时
   按需 fetch。`/match?op=<逗号分隔 id>`（预制 3 + 臂 4 **合并单一列表**，2026-10-10 用户修订——
@@ -255,8 +263,8 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
   （四臂 greedy 零 RNG；用过即终局披露）走 `TickResult.rewardDetail`（TS-only 诊断，不进 info、
   不参与 parity）与 `dqn.act`；机制见 game-mechanics.md §7.1。
 - useSearchParams 必须包 Suspense 外壳（Next 16 预渲染；/match 的 MatchConsole 模式）。
-- 组件层标记类型 = **CivLike**（marker.tsx 定义）：MockCiv 已退役，mock.ts 只剩 /online 大厅
-  与 legend-hero 标本。
+- 组件层标记类型 = **CivLike**（marker.tsx 定义）：MockCiv 已退役；/online 大厅 mock 亦随在线真实接线退役（2026-10-14）——
+  mock.ts 只剩 legend-hero 标本。
 - 原型演示控制条（/match demo bar）**已移除**（2026-10-02，真实环境接线时）。
 
 - **架构**：`layout.tsx`（server，持有 en metadata）→ `src/components/client-layout.tsx`

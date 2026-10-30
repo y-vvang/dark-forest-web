@@ -344,6 +344,18 @@ export class ViewTracker {
         for (const j of this.prevKnownAlive) {
             if (!knownAliveNow.has(j)) this.emit(tick, "log.dark");
         }
+        // ⑥b 槽复用配套（仅 cfg.slotReuse 世界可达）：**known 列被引擎复位**为驱逐
+        // 判据——true→false 仅复用发生（env 的 known 永不遗忘，死亡不清列）。以
+        // 死亡为判据是错的（评审 Critical #1）：下一刻 knownNow 重建时死者重新入
+        // 集，而 prevKnown 已删 ⇒ 幻影 contact（死者坐标）+ 幻影 observed（**死者
+        // 临终 tech/res**——规则③⑪情报泄漏），单机同样中招。非复用路径此循环恒
+        // 不触发（prevKnown 与 knownNow 都含死而不忘的 j）——实验零行为差。
+        for (const j of this.prevKnown) {
+            if (knownNow.has(j)) continue;
+            this.prevKnown.delete(j);
+            this.prevObserved.delete(j);
+            this.frozenIntel.delete(j);
+        }
 
         // 死亡（终态）：log.death；cause 传键名，EventLog 嵌套翻译
         const end = m.getEnd();

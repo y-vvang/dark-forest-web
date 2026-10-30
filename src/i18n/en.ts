@@ -183,6 +183,13 @@ export const en = {
     "online.cancel": "Leave queue",
     "online.ghost": "Queued (not yet born)",
     "online.waiting": "Waiting",
+    "online.next": "Next tick in {s}s",
+    "online.submitted": "Submitted for tick {t} — changeable until the tick ends",
+    "online.enterHint": "Enter = repeat last action",
+    "online.requeue": "Queue again",
+    "online.rollover": "The world ended — you are queued for the next one",
+    "online.offline": "Connection lost — retrying…",
+    "online.autoCommit": "Your pick takes effect at once and repeats each tick until changed",
 
     "aria.civ": "Civ #{id} · {state} · tech {tech} · res {res}",
     "aria.civ.plain": "Civ #{id} · {state}",

@@ -57,4 +57,15 @@ export function requireEnv(mainKey: string, devKey?: string, fallbackValue?: str
     return value;
 }
 
-export const constants = {} as const;
+export const constants = {
+    /**
+     * Upstash Redis REST（在线模式共享世界存储）。缺席回退 ""：getStore 据此分流
+     * （dev 无 env → 内存预览；产线缺 env → 显式抛错——两层都不静默）。
+     */
+    get upstashRedisRestUrl() {
+        return requireEnv("UPSTASH_REDIS_REST_URL", undefined, "");
+    },
+    get upstashRedisRestToken() {
+        return requireEnv("UPSTASH_REDIS_REST_TOKEN", undefined, "");
+    },
+} as const;

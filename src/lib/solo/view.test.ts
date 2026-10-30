@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { ScriptedRng } from "@/lib/engine/rng";
+import { DarkForestEnv2 } from "@/lib/engine/env";
 import { V24_CONFIG } from "@/lib/engine/config";
 import { ViewTracker } from "./view";
 import { SoloMatch } from "./match";
@@ -394,4 +395,132 @@ test("v2.4 own reveal suppressed when the target's domain activates between lock
     m2.submitAction(3, 1);
     tr2.update();
     expect(tr2.getLog().some((e) => e.key === "log.ownReveal")).toBe(true);
+});
+
+/**
+ * 槽复用（在线多生命，用户 2026-10-14）× 感知缓存（规则①③/评审 Important 1）：
+ * 存活玩家的 tracker 横跨槽位复用——known 列被引擎重置（认知只增不减是 env2 语义，
+ * true→false 仅复用发生）时，旧住客的 prevObserved/frozenIntel 缓存必须同步清除，
+ * 否则新住客的 OBSERVE 增量被吞、黑域冻结情报显示旧住宽数值。
+ */
+test("slot reuse: tracker evicts stale per-slot caches when the known column resets", () => {
+    const env = new DarkForestEnv2(
+        { ...V24_CONFIG, slotReuse: true },
+        new ScriptedRng([...Array(72).fill(0.02), 1, 2, 3, 4, 10, 10, 10, 10, 12.5], 0.9),
+    );
+    env.reset();
+    // 每访问铸造新 TickResult（identity 变化 = 新 resolve 到达，processTick 才运行）
+    const host = {
+        phase: "awaiting-action",
+        playerSlot: 0,
+        env,
+        get lastResult() {
+            return {
+                rewards: new Float64Array(36),
+                rewardDetail: { techTerm: new Float64Array(36), resAtReward: new Float64Array(36), attackCount: new Uint8Array(36), bdEnter: new Uint8Array(36) },
+                deadNow: [],
+                info: { n_alive: 36, n_births: 0, strike_events: [], invasions: [], loot_to: new Float64Array(36) },
+            } as unknown as import("@/lib/engine/types").TickResult;
+        },
+        getPendingInvader: () => null,
+        getEnd: () => null,
+    } as unknown as SoloMatch;
+    const tr = new ViewTracker(host);
+
+    // 旧住客（槽 5）：已知 + 已观测 + 风窗 → update 后 frozenIntel 封存 {9, 33}
+    env.known[0 * 36 + 5] = 1;
+    env.observed[0 * 36 + 5] = 1;
+    env.alive[5] = 1;
+    env.tech[5] = 9;
+    env.res[5] = 33;
+    env.domain_windup[5] = 1;
+    env.public_[5] = 1; // 旧住客曾公开广播
+    tr.update();
+    const m1 = tr.update().markers.find((x) => x.id === 5);
+    expect(m1?.tech).toBe(9); // 风窗观测情报 live 喂入（非域态）
+
+    // 旧住客死亡（log.dark）→ 全槽耗尽后槽 5 复用重生（认知列重置）
+    env.alive[5] = 0;
+    tr.update();
+    for (let i = 1; i < 36; i++) {
+        env.spawn_tick[i] = 1; // 全槽已生
+        if (i !== 5) env.alive[i] = 1; // 其余伪装在世——否则第一个已死槽不是 5
+    }
+    env.free_pool = 20;
+    env.pending_spawns[0] = 12.5;
+    env.activatePendingSpawns(); // 新住客入住槽 5（known/observed 列已清）
+    expect(env.alive[5]).toBe(1);
+    expect(env.known[0 * 36 + 5]).toBe(0);
+    tr.update(); // 重生刻：known true→false 被观察到 → 缓存清除发生在此刻
+
+    // 新住客重新被玩家观测 + 新风窗（后续刻）
+    env.known[0 * 36 + 5] = 1;
+    env.observed[0 * 36 + 5] = 1;
+    env.tech[5] = 7;
+    env.res[5] = 21;
+    env.domain_windup[5] = 1;
+    env.public_[5] = 1; // 新住客公开广播
+    tr.update();
+    const entries = tr.getLog().map((e) => e.key);
+    expect(entries).toContain("log.observed"); // 新住客 OBSERVE 增量不被旧缓存吞掉
+    expect(entries).toContain("log.broadcast"); // 广播不因旧住客公开史被误标为 contact
+    tr.update();
+    env.in_domain[5] = 1; // 新住客域生效——冻结情报 = 新住宧行为
+    const m2 = tr.update().markers.find((x) => x.id === 5);
+    expect(m2?.state).toBe("domain");
+    expect(m2?.tech).toBe(7); // 非旧住客的 9
+    expect(m2?.res).toBe(21);
+});
+
+/**
+ * 轮次 2 评审 Critical #1 回归（无复用世界）：⑥ 缓存驱逐误键在"死亡"而非
+ * "known 复位"——env 的 known 永不遗忘（死亡不清列），下一刻 processTick 重建
+ * knownNow 时死者重新入集，而 prevKnown/prevObserved 已被删 ⇒ 幻影 contact
+ * （死者恒星坐标）+ 幻影 observed（**死者临终 tech/res**——环境未赋予的信息，
+ * 违反规则③⑪"宁可少知道"）。单机模式同样中招（view 为共享层）。
+ */
+test("death without reuse leaves no phantom contact/observed on the next tick", () => {
+    const env = new DarkForestEnv2(
+        V24_CONFIG,
+        new ScriptedRng([...Array(72).fill(0.02), 1, 2, 3, 4, 10, 10, 10, 10, 12.5], 0.9),
+    );
+    env.reset();
+    const host = {
+        phase: "awaiting-action",
+        playerSlot: 0,
+        env,
+        get lastResult() {
+            return {
+                rewards: new Float64Array(36),
+                rewardDetail: { techTerm: new Float64Array(36), resAtReward: new Float64Array(36), attackCount: new Uint8Array(36), bdEnter: new Uint8Array(36) },
+                deadNow: [],
+                info: { n_alive: 36, n_births: 0, strike_events: [], invasions: [], loot_to: new Float64Array(36) },
+            } as unknown as import("@/lib/engine/types").TickResult;
+        },
+        getPendingInvader: () => null,
+        getEnd: () => null,
+    } as unknown as SoloMatch;
+    const tr = new ViewTracker(host);
+
+    // 已知 + 已观测的文明（slot 5）→ 初次 contact + observed
+    env.known[0 * 36 + 5] = 1;
+    env.observed[0 * 36 + 5] = 1;
+    env.alive[5] = 1;
+    env.tech[5] = 9;
+    env.res[5] = 21;
+    tr.update();
+    const first = tr.getLog().map((e) => e.key);
+    expect(first).toContain("log.contact");
+    expect(first).toContain("log.observed");
+
+    // 死亡（known 列不动——env 永不遗忘）→ log.dark；修复前⑥ 在此误删缓存
+    env.alive[5] = 0;
+    tr.update();
+    expect(tr.getLog().map((e) => e.key)).toContain("log.dark");
+
+    // 下一刻：环境零变化——修复前 knownNow 重建含死者 + prevKnown 已删
+    // ⇒ 幻影 contact + observed（读死者临终 9/21）
+    const before = tr.getLog().length;
+    tr.update();
+    expect(tr.getLog().slice(before).map((e) => e.key)).toEqual([]);
 });

@@ -22,8 +22,22 @@ function isDeadCause(c: string): c is DeadCause {
  * exists in this world — surviving to tick 250 IS the win. Third state
  * (2026-10-02): the player died before their own birth (world heat death).
  * `advised`（2026-10-10 模型参谋）：用过即披露一行——AI 辅助 = 非独立生存（诚实标记）。
+ * `onAgain`（2026-10-13 在线模式）：提供时以回调钮替代 /solo 链接（在线 = 再排一次
+ * 入下一个世界；单人默认行为不变）。
  */
-export function EndOverlay({ end, advised, tMax }: { end: EndView; advised?: boolean; tMax?: number }) {
+export function EndOverlay({
+    end,
+    advised,
+    tMax,
+    onAgain,
+    againLabel,
+}: {
+    end: EndView;
+    advised?: boolean;
+    tMax?: number;
+    onAgain?: () => void;
+    againLabel?: MessageKey;
+}) {
     const { t } = useI18n();
 
     return (
@@ -62,12 +76,22 @@ export function EndOverlay({ end, advised, tMax }: { end: EndView; advised?: boo
                 )}
 
                 <div className="mt-6 grid gap-2">
-                    <Link
-                        href="/solo"
-                        className="rounded-panel bg-self px-3 py-2 text-center text-base font-bold text-panel"
-                    >
-                        {t("end.again")}
-                    </Link>
+                    {onAgain !== undefined ? (
+                        <button
+                            type="button"
+                            onClick={onAgain}
+                            className="rounded-panel bg-self px-3 py-2 text-center text-base font-bold text-panel"
+                        >
+                            {t(againLabel ?? "online.requeue")}
+                        </button>
+                    ) : (
+                        <Link
+                            href="/solo"
+                            className="rounded-panel bg-self px-3 py-2 text-center text-base font-bold text-panel"
+                        >
+                            {t("end.again")}
+                        </Link>
+                    )}
                     <Link
                         href="/"
                         className="rounded-panel border border-subtle px-3 py-2 text-center text-base text-dim hover:border-strong hover:text-ink"

@@ -959,16 +959,24 @@ export class DarkForestEnv2 {
     }
 
     /** 阶段 10：内生出生（env2.py:224-254 调用点 :606） */
-    private stageBirths(_ctx: TickCtx): void {
-        this.activatePendingSpawns();
+    private stageBirths(ctx: TickCtx): void {
+        this.activatePendingSpawns(ctx.deadNow);
     }
 
     /**
      * v2.4 无界内生出生（env2_v24.py:249-275）：恒恰一个预滚额；池攒够即生
      * （每刻至多 1 个、最靠前空槽）。**无科技继承**：出生科技恒 tech_spawn_lo
      * （config 钉 lo=hi=1.0——同起跑线；v2.3 的 P25–P75 抽取已删，每出生少 1 个 RNG 值）。
+     *
+     * **槽复用（对实验的明示偏离，用户 2026-10-14 指令"取消 36 上限"；仅
+     * cfg.slotReuse 世界开启——在线多生命世界）**：全部未生槽耗尽后取最靠前
+     * **已死**槽重生——玩家死亡→再排队的出生供给保障。缺省世界（金标准回放/
+     * 单机/统计等价）保持 env2_v24 硬上限（实证：trace-main-s1/d 等暴力轨迹
+     * 会耗尽 36 槽——复用若默认开启即破坏奇偶）。复用 = 恒星位置不动（"恒星
+     * 位置永不变"字面保持）、零额外 RNG（消耗序与新生同构）、认知态全清
+     * （见 reuseSlot）。
      */
-    activatePendingSpawns(): void {
+    activatePendingSpawns(deadNow?: Uint8Array): void {
         if (this.pending_spawns.length === 0) return;
         if (this.free_pool < this.pending_spawns[0]) return;
         let slot = -1;
@@ -977,6 +985,20 @@ export class DarkForestEnv2 {
                 slot = i;
                 break;
             }
+        }
+        if (slot < 0 && this.cfg.slotReuse === true) {
+            for (let i = 0; i < this.n; i++) {
+                // 跳过本刻刚死者（deadNow，评审 Critical #2）：同刻死亡+复用会把
+                // 死者立即顶生——死因被 reuseSlot 抹空、上层以 alive 判死读到新住客
+                // ⇒ 吞死/幻影席位共享/重演漂移砖化。推迟一刻复用，语义零损。
+                if (deadNow?.[i] === 1) continue;
+                if (this.spawn_tick[i] <= 1e8 && this.alive[i] === 0) {
+                    slot = i;
+                    break;
+                }
+            }
+            if (slot < 0) return; // 36 槽全数在场存活——无出生供给
+            this.reuseSlot(slot);
         }
         if (slot < 0) return;
         const spawnRes = this.pending_spawns.shift() as number;
@@ -989,6 +1011,34 @@ export class DarkForestEnv2 {
         this.spawn_tick[slot] = this.t + 1;
         this.alive[slot] = 1;
         this.birth_log.push([this.t + 1, slot, spawnRes]);
+    }
+
+    /**
+     * 复用槽的旧主认知态清除（仅复用路径可达）。行+列都清：他人对旧主的
+     * known/observed 一并失效——旧主死亡时感知层已发 log.dark，新主是全新文明；
+     * first_detect_tick/peak_tech 一并归位。pending_reveal/pending_counter 中
+     * 引用本槽的条目全清：防死者死后揭发新主（延迟公开落在新主头上）、幽灵反曝光。
+     */
+    private reuseSlot(j: number): void {
+        const n = this.n;
+        for (let i = 0; i < n; i++) {
+            this.known[i * n + j] = 0;
+            this.known[j * n + i] = 0;
+            this.observed[i * n + j] = 0;
+            this.observed[j * n + i] = 0;
+            this.first_detect_tick[i * n + j] = -1;
+            this.first_detect_tick[j * n + i] = -1;
+        }
+        this.public_[j] = 0;
+        this.in_domain[j] = 0;
+        this.domain_windup[j] = 0;
+        this.death_cause[j] = "";
+        this.last_action[j] = A_SILENT;
+        this.peak_tech[j] = this.tech_spawn_lo;
+        this._invaders.delete(j);
+        this._targets.delete(j);
+        this.pending_reveal = this.pending_reveal.filter((e) => e[1] !== j);
+        this.pending_counter = this.pending_counter.filter((i) => i !== j);
     }
 
     /** Q7（env2.py:219-222）：槽位仅在 spawn_tick 后激活——保留 parity（resolve 不引用） */

@@ -169,6 +169,13 @@ export const zh: Dict = {
     "online.cancel": "取消排队",
     "online.ghost": "排队中（未出生）",
     "online.waiting": "等待中",
+    "online.next": "下一刻还有 {s} 秒",
+    "online.submitted": "已提交第 {t} 刻行动 · 刻末前可修改",
+    "online.enterHint": "回车 = 重复上刻行动",
+    "online.requeue": "再排一次",
+    "online.rollover": "本世界已终局 · 你已排入下一个世界",
+    "online.offline": "连接中断 · 正在重试…",
+    "online.autoCommit": "选择即时生效，并每刻自动延续，直到你改变它",
 
     "aria.civ": "文明 #{id} · {state} · 科技 {tech} · 资源 {res}",
     "aria.civ.plain": "文明 #{id} · {state}",

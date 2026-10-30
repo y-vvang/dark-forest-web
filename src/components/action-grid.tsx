@@ -19,6 +19,10 @@ import { Panel } from "./panel";
  *   submode first (execute disabled while armed; strike/observe have a
  *   "nearest known" skip in the armed bar; invade/reveal require a pick).
  *
+ * **两种形态（2026-10-14 用户裁定）**：solo 传 onExecute/executeDisabled =
+ * 回合制提交钮（§10.4 原样）；online **不传** = 无执行钮——选择即提交（页面
+ * 负责），行动格仅作选择/武装界面。
+ *
  * Disabled = env's own valid row (`valid[a] === false`); the inline reason
  * comes from gateOf (parity-locked against env in gates-parity.test).
  */
@@ -78,21 +82,13 @@ export function ActionGrid({
     /** 点击动作：静默/发展 = 设姿态（并清一次性）；其余 = 进入/切换待执行 */
     onSelect: (id: ActionId) => void;
     onArm: (id: ActionId) => void;
-    onExecute: () => void;
-    executeDisabled: boolean;
+    /** solo 传入 = 渲染执行钮（回合制）；online 不传 = 选择即提交（无执行钮） */
+    onExecute?: () => void;
+    executeDisabled?: boolean;
     /** 会话环境配置：门理由文字与真实门槛一致（缺省 = v2.4 默认） */
     cfg?: EnvConfig;
 }) {
     const { t } = useI18n();
-
-    // 执行按钮副行：将执行什么——pending 为动作名（目标 ≥0 追加 #编号），否则姿态名
-    const pendingDef = pending !== null ? ORDER.find((d) => d.id === pending.id) : undefined;
-    const stanceDef = ORDER.find((d) => d.id === stance);
-    const executeSub =
-        pending !== null && pendingDef !== undefined
-            ? t(pendingDef.name) +
-              (pending.target !== undefined && pending.target >= 0 ? ` #${pending.target}` : "")
-            : t(stanceDef?.name ?? "actions.silent");
 
     return (
         <Panel title={t("match.actions")}>
@@ -144,15 +140,24 @@ export function ActionGrid({
                     );
                 })}
             </div>
-            <button
-                type="button"
-                onClick={onExecute}
-                disabled={executeDisabled}
-                className="mt-2 flex min-h-12 w-full flex-col items-center justify-center rounded-panel bg-self px-3 py-2 font-bold text-panel hover:opacity-90 disabled:cursor-default disabled:opacity-40"
-            >
-                <span>{t("match.next")}</span>
-                <span className="tnum text-xs font-normal opacity-80">{executeSub}</span>
-            </button>
+            {onExecute !== undefined && (
+                <button
+                    type="button"
+                    onClick={onExecute}
+                    disabled={executeDisabled}
+                    className="mt-2 flex min-h-12 w-full flex-col items-center justify-center rounded-panel bg-self px-3 py-2 font-bold text-panel hover:opacity-90 disabled:cursor-default disabled:opacity-40"
+                >
+                    <span>{t("match.next")}</span>
+                    <span className="tnum text-xs font-normal opacity-80">
+                        {pending !== null
+                            ? t(ORDER.find((d) => d.id === pending.id)?.name ?? "actions.silent") +
+                              (pending.target !== undefined && pending.target >= 0
+                                  ? ` #${pending.target}`
+                                  : "")
+                            : t(ORDER.find((d) => d.id === stance)?.name ?? "actions.silent")}
+                    </span>
+                </button>
+            )}
         </Panel>
     );
 }

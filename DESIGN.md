@@ -287,6 +287,19 @@ stay silent and wait for signals`。
 `No exact intel`。浮层其余文案复用现有键：状态名 = `legend.*`、科技/资源 = `match.tech` /
 `match.res`、封存注 = `label.sealed`。
 
+**在线模式**（2026-10-13 在线模式轮；既存 8 键沿用——`online.title/position/noAccount/
+world/note/cancel/ghost/waiting` 为既成事实源头）：
+
+| 键 | 中文 | English |
+|---|---|---|
+| `online.next` | 下一刻还有 {s} 秒 | Next tick in {s}s |
+| `online.submitted` | 已提交第 {t} 刻行动 · 刻末前可修改 | Submitted for tick {t} — changeable until the tick ends |
+| `online.enterHint` | 回车 = 重复上刻行动 | Enter = repeat last action |
+| `online.requeue` | 再排一次 | Queue again |
+| `online.rollover` | 本世界已终局 · 你已排入下一个世界 | The world ended — you are queued for the next one |
+| `online.offline` | 连接中断 · 正在重试… | Connection lost — retrying… |
+| `online.autoCommit` | 选择即时生效，并每刻自动延续，直到你改变它 | Your pick takes effect at once and repeats each tick until changed |
+
 ## 8. 布局概念（v0.2 细化）
 
 ```
@@ -442,6 +455,22 @@ dim，`600ep · seed 42`）+ 奖励参数行（text-xs mono dim，如 `soft 0.01
 `#3`（text-xl ink）+ `无需账号 · 排队即入场`（dim）+ 世界读数（刻/存活/池）+ 幽灵标记迷你星图
 （`faint` 虚线圆）+ `取消排队`（普通钮）。
 
+### 10.11a 在线控制台（出生后；2026-10-13 补账——UI 先行规则）
+= `/match` 控制台（§10.3-10.6 同构：状态条/星图/行动格/事件日志）**减** AuxButtons（参谋与
+奖励面板为单人专属，用户 2026-10-12 裁决③），**加**：
+- TopBar 右侧刻截止读数：`online.next {s}`（mono，随轮询更新——无 JS 动画）；
+- **无执行钮（用户 2026-10-14 裁定）：选择即提交 + 刻末安全网**——姿态（silent/develop，
+  跨刻保留）与无目标一次性点击即 POST（服务端逐窗后写覆盖）；目标动作武装后选中即 POST
+  （strike/observe 可"最近已知"兜底即交）。刻末 deadline−2s 安全网：本窗无提交且姿态非
+  静默 → 自动续交（`online.autoCommit` 提示行）；silent 不发包（服务端缺省即静默——记录
+  零成本）。隐藏页计时器被浏览器节流 → 不触发 → 静默（AFK 语义）。回车 = 重复上刻
+  （`online.enterHint`）；"已提交"行 = `online.submitted {t}`；待执行高亮 = 派生自本窗提交
+  （刻后自动回退姿态）；
+- 入侵模态 = §10.7 组件的 `timed` 形态（倒计时条时长 = 当刻剩余，CSS-only，恒走满——无快进后不再提前消失）；"取消" = 本地关闭模态（截止保原即环境语义，不发 -1）；
+- 终局遮罩：`再排一次`（`online.requeue` → 排入下一个世界）+ 返回首页；无旁观（死即冻结）。
+`/online` 单页 token 驱动：大厅态 = §10.11 排队卡 + 幽灵星图；`online.rollover` 在滚动后的大厅
+显示一行；`online.offline` 为连接失败横幅（数据保持旧态）。
+
 ### 10.12 奖励浮层 `reward-panel`（2026-10-10 用户需求：按钮 + popover）
 右列顶部辅助钮行：`奖励`（text-xs，border-subtle；未出生禁用）。点击开 popover
 （`popover="auto"`，锚定式摆放——同对手卡原机制 `clampPopoverIntoViewport`）：
@@ -531,5 +560,5 @@ greedy argmax（ε=0，不消耗会话随机流——与对局推进完全隔离
   行动格提供"重复上刻"快捷（回车 = 沿用当前行动）。
 - **模式 (b) 在线共享世界：定时制**。世界按固定刻长推进（初值 20s/刻，占位可调），到刻即结算；
   未提交的玩家默认动作 = **静默**——这正是环境自身的兜底语义（缺位/非法动作在 resolve 中
-  降级为 SILENT，env2.py:374-393），偏离最小；全员提前提交则提前结算（快进）。
+  降级为 SILENT，env2.py:374-393），偏离最小。**无快进**（用户 2026-10-14 推翻原"全员提前提交则提前结算"条款——AI 一等公民，每刻恒满 20s：早结算压缩窗口、入侵倒计时条提前消失，不可调试）。
 - 入侵反击窗口随模式而定：单机**无限时**（模态无倒计时条）；在线 = 当刻剩余时间（§10.7）。
