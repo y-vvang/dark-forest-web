@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { V24_CONFIG } from "@/lib/engine/config";
+import { V25_CONFIG } from "@/lib/engine/config";
 import { ARM_IDS, armParamsOf, emptyIngredients, partsOf, rewardOf } from "./rewards";
 
-test("armParamsOf: V24_CONFIG + arm override (single source of truth)", () => {
-    expect(armParamsOf("a_classic")).toEqual(V24_CONFIG);
+test("armParamsOf: V25_CONFIG + arm override (single source of truth)", () => {
+    expect(armParamsOf("a_classic")).toEqual(V25_CONFIG);
     expect(armParamsOf("b_terminal").softsignRewardScale).toBe(0);
     expect(armParamsOf("b_terminal").bdEntryPenalty).toBe(0);
     expect(armParamsOf("c_res").resRewardScale).toBe(0.0025);
@@ -15,7 +15,7 @@ test("armParamsOf: V24_CONFIG + arm override (single source of truth)", () => {
     expect([...ARM_IDS]).toEqual(["a_classic", "b_terminal", "c_res", "d_malintent"]);
 });
 
-test("rewardOf: mirrors env2_v24 reward composition (develop/res/attack/bd/death)", () => {
+test("rewardOf: mirrors env2_v25 reward composition (develop/res/attack/bd/death)", () => {
     // 单刻发展（techTerm=2.5、res=12.5）+ 揭露一次 + 入域 + 死亡
     const ing = { techTerm: 2.5, resAtReward: 12.5, attackCount: 1, bdEnter: 1, death: 1 };
     const d = rewardOf(ing, {
@@ -35,7 +35,7 @@ test("rewardOf: mirrors env2_v24 reward composition (develop/res/attack/bd/death
         bdEntryPenalty: 0,
     });
     expect(b).toBe(-10);
-    // res 津贴 >0 才加（env2_v24.py:628 条件照抄）
+    // res 津贴 >0 才加（env2_v25.py:722 条件照抄）
     const noRes = rewardOf(
         { techTerm: 0, resAtReward: 12.5, attackCount: 0, bdEnter: 0, death: 0 },
         { deathPenalty: 10, softsignRewardScale: 0, resRewardScale: 0, attackReward: 0, bdEntryPenalty: 0.5 },
@@ -45,7 +45,7 @@ test("rewardOf: mirrors env2_v24 reward composition (develop/res/attack/bd/death
 
 test("partsOf: component breakdown sums to rewardOf", () => {
     const ing = { techTerm: 3, resAtReward: 15, attackCount: 2, bdEnter: 1, death: 0 };
-    const params = V24_CONFIG;
+    const params = V25_CONFIG;
     const parts = partsOf(ing, params);
     const sum = parts.stipend + parts.res + parts.bounty + parts.bdEntry + parts.death;
     expect(sum).toBeCloseTo(rewardOf(ing, params), 15);

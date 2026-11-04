@@ -5,12 +5,12 @@
  * → 4 res [10,10,10,10] → 1 预滚 12.5）；fill 供余量。ScriptedRng 原样返回。
  */
 import { DarkForestEnv2 } from "./env";
-import { V24_CONFIG } from "./config";
+import { V25_CONFIG } from "./config";
 import { ScriptedRng } from "./rng";
 
 export function makeEnv(queue: number[] = [], fill = 0.5, overrides = {}) {
     return new DarkForestEnv2(
-        { ...V24_CONFIG, ...overrides },
+        { ...V25_CONFIG, ...overrides },
         new ScriptedRng(
             [
                 ...Array(72).fill(0.02),

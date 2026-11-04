@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""录制-回放金标准（v2.4）：录制 env2_v24.py 每一次 RNG 调用（uniform/choice）+ 逐刻全状态快照。
+"""录制-回放金标准（v2.5）：录制 env2_v25.py 每一次 RNG 调用（uniform/choice）+ 逐刻全状态快照。
 
 开发期专用（PYTHONUTF8=1 python3 scripts/golden/record_golden.py）。
 只读引用 experiment/（sys.path），零改动。产出写入 src/lib/engine/testdata/：
@@ -14,8 +14,12 @@
   trace-tgt-heat.json.gz  定向：资源枯竭 → 热寂/晚局
   stats.json             统计等价第二口径的参考聚合（30 局 presets-only）
 
-v2.4 变更（vs v2.3 录制）：驱动循环对齐 stage_b_v24（目标请求集 = INVADE/STRIKE/
-BROADCAST_OTHER/OBSERVE 四动作；df→pick_target，其余 rng.choice）；meta.cfg 记录完整
+v2.5 变更（vs v2.4 录制）：驱动循环对齐 stage_b_v25b——**v2b 启发式**（df 反咬
+last_invader、pacifist under_attack/public→黑域；新分支零 RNG 但跳过其后抽签）；
+快照新增 under_attack/last_invader；cfg_json 新增 nNorm（v2.5 obs 38 = 9 标量 +
+8 one-hot + 3×7 近邻）；**死槽复用为缺省**（轨迹 births 可 >36——复用分支消耗预滚
+重抽，v2.4 此处早退零消耗）。v2.4 要点保留：目标请求集 = INVADE/STRIKE/
+BROADCAST_OTHER/OBSERVE 四动作（df→pick_target_v2，其余 rng.choice）；meta.cfg 记录完整
 env 参数（TS 回放按 trace 自建 EnvConfig，奖励臂轨迹自带其参数）；出生无科技继承
 （每出生少消耗 1 个 RNG 值）。
 
@@ -37,30 +41,32 @@ import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "experiment", "experiment"))
 
-import data2_v24 as dm  # noqa: E402
-from env2_v24 import A_BOTHER, A_INVADE, A_OBSERVE, A_STRIKE  # noqa: E402
+import data2_v25 as dm  # noqa: E402
+from env2_v25 import A_BOTHER, A_INVADE, A_OBSERVE, A_STRIKE  # noqa: E402
 from model import DQNAgent  # noqa: E402
-from stage_b_v24 import build_pattern  # noqa: E402
-from train2_v24 import heuristic_action, pick_target  # noqa: E402
+from stage_b_v25b import build_pattern  # noqa: E402
+from stage_b_v25b import heuristic_action_v2 as heuristic_action  # noqa: E402
+from stage_b_v25b import pick_target_v2 as pick_target  # noqa: E402
 
 TARGET_ACTIONS = (A_INVADE, A_STRIKE, A_BOTHER, A_OBSERVE)  # v2.4 目标请求集（4 动作）
 
-CFG = dm.load_config(os.path.join(REPO, "experiment", "experiment", "config_v24.yaml"))
+CFG = dm.load_config(os.path.join(REPO, "experiment", "experiment", "config_v25.yaml"))
 OUT = os.path.join(REPO, "src", "lib", "engine", "testdata")
 
-# v2.4 四奖励臂：checkpoint + 该臂训练时的完整 config（env 节含奖励 override）
+# v2.5 四奖励臂：checkpoint + 该臂训练时的完整 config（env 节含奖励 override）
 ARMS = {}
 for arm in ["a_classic", "b_terminal", "c_res", "d_malintent"]:
     ARMS[arm] = {
-        "npz": os.path.join(REPO, "experiment", "runs", "v24_arms", arm, "run", "seed42_main", "checkpoint.npz"),
-        "cfg": dm.load_config(os.path.join(REPO, "experiment", "runs", "v24_arms", arm, "config.yaml")),
+        "npz": os.path.join(REPO, "experiment", "runs", "v25_arms", arm, "run", "seed42_main", "checkpoint.npz"),
+        "cfg": dm.load_config(os.path.join(REPO, "experiment", "runs", "v25_arms", arm, "config.yaml")),
     }
 
 
 def cfg_json(env_cfg):
     """yaml env 节 → TS EnvConfig 字段（camelCase，一一对应；meta.cfg 供回放端自建配置）。"""
     return {
-        "nAgents": int(env_cfg["n_agents"]), "world": float(env_cfg["world"]),
+        "nAgents": int(env_cfg["n_agents"]), "nNorm": float(env_cfg.get("n_norm", 36.0)),
+        "world": float(env_cfg["world"]),
         "detectRadius": float(env_cfg["detect_radius"]), "tMax": int(env_cfg["t_max"]),
         "pDetectBase": float(env_cfg["p_detect_base"]), "stealthMult": float(env_cfg["stealth_mult"]),
         "pDetectMax": float(env_cfg["p_detect_max"]), "pExplosion": float(env_cfg["p_explosion"]),
@@ -103,7 +109,7 @@ def _sz(size):
 
 
 class RecordingRng:
-    """包装 numpy Generator——env2_v24.py 只调 uniform(...) / choice(a)。"""
+    """包装 numpy Generator——env2_v25.py 只调 uniform(...) / choice(a)。"""
 
     def __init__(self, inner):
         self.inner = inner
@@ -151,6 +157,8 @@ def snapshot(env):
         "public": env.public.astype(int).tolist(),
         "in_domain": env.in_domain.astype(int).tolist(),
         "domain_windup": env.domain_windup.astype(int).tolist(),
+        "under_attack": env.under_attack.astype(int).tolist(),
+        "last_invader": env.last_invader.tolist(),
         "pending_reveal": [list(x) for x in env.pending_reveal],
         "pending_counter": list(env.pending_counter),
         "last_action": env.last_action.tolist(),
@@ -203,7 +211,7 @@ def load_agent(arm, seed=1001):
 def run_trace(seed, kinds, agent_arms=None, script=None, patch=None, max_ticks=None, note="", cfg=None):
     """script(env, t) -> (actions, targets, forced_re | None)；agent_arms: {slot: arm 名}。
 
-    cfg：本轨迹的完整 config（ learner 轨迹=对应臂训练 config；默认=config_v24）。"""
+    cfg：本轨迹的完整 config（ learner 轨迹=对应臂训练 config；默认=config_v25）。"""
     cfg = cfg if cfg is not None else CFG
     env = dm.make_env(cfg, seed=seed)
     env.rng = RecordingRng(np.random.default_rng(seed))
@@ -244,9 +252,9 @@ def run_trace(seed, kinds, agent_arms=None, script=None, patch=None, max_ticks=N
                 cand = np.where(tmask[i])[0]
                 if cand.size:
                     if kinds[i] == "df":
-                        targets[i] = pick_target(tmask[i], "df", env.tech, actions[i])
+                        targets[i] = pick_target(tmask[i], "df", env.tech, actions[i], i, env)
                     else:
-                        targets[i] = int(run_rng.choice(cand))  # learner/random 均匀（stage_b_v24.py:52）
+                        targets[i] = int(run_rng.choice(cand))  # learner/random 均匀（stage_b_v25b.py:102）
         invaded = env.begin_tick(actions, targets)
         re_obs = env._obs() if invaded else None
         re = actions.copy()
@@ -375,7 +383,7 @@ def main():
             for i in np.where(np.isin(actions, TARGET_ACTIONS))[0]:
                 cand = np.where(tmask[i])[0]
                 if cand.size:
-                    targets[i] = (pick_target(tmask[i], "df", env.tech, actions[i])
+                    targets[i] = (pick_target(tmask[i], "df", env.tech, actions[i], i, env)
                                   if kinds[i] == "df" else int(rng.choice(cand)))
             invaded = env.begin_tick(actions, targets)
             re = actions.copy()

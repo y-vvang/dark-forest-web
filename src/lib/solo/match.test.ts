@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { V24_CONFIG } from "@/lib/engine/config";
+import { V25_CONFIG } from "@/lib/engine/config";
 import { ScriptedRng } from "@/lib/engine/rng";
 import type { EndView } from "./match";
 import { SoloMatch as Match } from "./match";
+import { ViewTracker } from "./view";
 
 /**
  * 场景编排说明：makeEnv 式基础队列（72 pos 全 0.02 同点、techs [1,2,3,4]、res 全 10、
@@ -17,8 +18,11 @@ function baseEnvRng(fill = 0.01) {
     );
 }
 
-test("start: queued ghost tick until player birth (ordinal 4), then awaiting-action", () => {
-    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
+/** 到达刻注入：u=0 → arrival 1（玩家 = 首个内生出生——v2.5 到达制的退化点，旧测试口径） */
+const ARR1 = () => new ScriptedRng([0.0], 0);
+
+test("start: queued ghost tick until player birth (arrival 1 = first endogenous birth), then awaiting-action", () => {
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     expect(m.phase).toBe("queued");
     m.start();
     expect(m.playerSlot).toBe(4);
@@ -28,7 +32,7 @@ test("start: queued ghost tick until player birth (ordinal 4), then awaiting-act
 });
 
 test("submitAction guards: wrong phase / invalid action / after end all throw", () => {
-    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     m.start();
     expect(() => m.submitRechoice(0)).toThrow(/phase/); // awaiting-action 下不可重选
     expect(() => m.submitAction(4, -1)).toThrow(/invalid/); // tech≈2.5 无已知 → STRIKE 非法
@@ -36,7 +40,7 @@ test("submitAction guards: wrong phase / invalid action / after end all throw", 
     m.submitAction(0, -1); // SILENT
     expect(m.env.t).toBe(t0 + 1);
     // 强制终局（env 公开为测试接缝）
-    const m2 = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
+    const m2 = new Match(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     m2.env.alive.fill(0);
     m2.env.pending_spawns[0] = 9999;
     m2.start();
@@ -53,7 +57,7 @@ test("player invaded → awaiting-rechoice; counter-invade → mutual death (Q9)
         [1, 1, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 4],
         0.5,
     );
-    const m = new Match(7, ["random"], new Map(), V24_CONFIG, { envRng: baseEnvRng(), presetRng });
+    const m = new Match(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng(), presetRng });
     m.start(); // t0：出生 slot4
     m.submitAction(1, -1); // t1：DEVELOP（非静默，slot0 刻中探测到玩家）
     expect(m.phase).toBe("awaiting-action");
@@ -71,7 +75,7 @@ test("player invaded → awaiting-rechoice; counter-invade → mutual death (Q9)
 
 test("re-choose BD cancels the invasion; cancel keeps the original action", () => {
     const mk = () =>
-        new Match(7, ["random"], new Map(), V24_CONFIG, {
+        new Match(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
             envRng: baseEnvRng(),
             presetRng: new ScriptedRng([1, 1, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 4], 0.5),
         });
@@ -99,9 +103,9 @@ test("re-choose BD cancels the invasion; cancel keeps the original action", () =
 });
 
 test("won: alive at t_max", () => {
-    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     m.start();
-    m.env.t = V24_CONFIG.tMax - 2; // 接缝：直接推到末两刻
+    m.env.t = V25_CONFIG.tMax - 2; // 接缝：直接推到末两刻
     m.submitAction(0, -1);
     m.submitAction(0, -1);
     expect(m.phase).toBe("ended");
@@ -115,7 +119,7 @@ test("stats: own strike kill + invade loot accumulate from info (rule ①)", () 
     // fill=0.025：探测火（< p_row≈0.03+）而流失不触发（≥0.02）——res 保持 10，loot 恰 5。
     // presetRng fill=0.3：pacifist 恒 DEVELOP（非静默 → 玩家可探测到全部 AI）。
     // 玩家经接缝上调 tech=9 → STRIKE/INVADE 合法。
-    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -134,7 +138,7 @@ test("stats: own strike kill + invade loot accumulate from info (rule ①)", () 
 });
 
 test("v2.4: cfg injection — custom tMax ends the run at 20 (won, not 250)", () => {
-    const m = new Match(7, ["pacifist"], new Map(), { ...V24_CONFIG, tMax: 20 }, { envRng: baseEnvRng() });
+    const m = new Match(7, ["pacifist"], new Map(), { ...V25_CONFIG, tMax: 20 }, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     m.start();
     for (let i = 0; i < 30 && m.phase !== "ended"; i++) m.submitAction(0, -1);
     expect(m.phase).toBe("ended");
@@ -143,7 +147,7 @@ test("v2.4: cfg injection — custom tMax ends the run at 20 (won, not 250)", ()
 });
 
 test("v2.4: submitAction guards BOTHER target (reveal needs explicit candidate)", () => {
-    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -159,7 +163,7 @@ test("v2.4: submitAction guards BOTHER target (reveal needs explicit candidate)"
 });
 
 test("v2.4: OBSERVE takes explicit target; -1 falls back to nearest known", () => {
-    const m = new Match(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -170,4 +174,130 @@ test("v2.4: OBSERVE takes explicit target; -1 falls back to nearest known", () =
     expect(m.env.observed[4 * 36 + 2]).toBe(1);
     m.submitAction(7, -1); // 无目标 → 最近已知（全同点平手取先 = slot0——探测亦发现 0）
     expect(m.env.observed[4 * 36 + 0]).toBe(1);
+});
+
+// ------------------------------------------------------- v2.5 随机到达出生（用户 2026-11-01）
+
+test("arrival: u=0.5 → arrival 126 — earlier births go to opponents, player takes tick-126 birth", () => {
+    // QUIET（0.05）：无流失/爆炸/饿死 → 每刻恰一出生（预滚队列尽后恒 fill 0.05）。
+    // 槽公式：tick k 的出生槽 = k+3（初始 4 席后顺延；33/69 刻的 _grow 不破坏——
+    // 每次翻倍恰补足后续未生槽）。到达前的 125 次出生全归对手光标。
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, {
+        envRng: baseEnvRng(0.05),
+        presetRng: new ScriptedRng([], 0.3),
+        arrivalRng: new ScriptedRng([0.5], 0),
+    });
+    let queuedTicks = 0;
+    m.start(() => queuedTicks++);
+    expect(m.arrivalTick).toBe(126);
+    // 槽公式：tick k ≤ 32 → k+3；t33 增长（36→72，出生取 n-1=71）；34..68 → k+2；
+    // t69 二次增长（72→144，取 143）；k ≥ 70 → k+2。tick 126 → 128
+    expect(m.playerSlot).toBe(128);
+    expect(m.env.spawn_tick[128]).toBe(126);
+    expect(m.phase).toBe("awaiting-action");
+    expect(m.env.t).toBe(126);
+    expect(queuedTicks).toBe(126); // 逐刻回调（含出生刻——ViewTracker 契约）
+});
+
+test("arrival: u=0 → arrival 1 — player takes the first endogenous birth (legacy behavior)", () => {
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, {
+        envRng: baseEnvRng(),
+        presetRng: new ScriptedRng([], 0.3),
+        arrivalRng: new ScriptedRng([0.0], 0),
+    });
+    m.start();
+    expect(m.arrivalTick).toBe(1);
+    expect(m.playerSlot).toBe(4); // 首个内生出生（旧 PLAYER_BIRTH_ORDINAL 行为）
+});
+
+test("grow-slot birth: reward/loot consumers length-guard old-n resolve arrays (review I-1)", () => {
+    // 面板可调大预算（1000）→ 36 槽满员存活 → t33 _grow；arrival=33 恰落增长刻 →
+    // 玩家生于扩容槽 71（new_n−1）。resolve 返回的 rewards/loot_to/rewardDetail 数组
+    // 长度 = 扩容前 n（python 同构——ctx 在 resolve 入口按旧 n 分配）——会话/视图层
+    // 直索引 OOB → NaN 一次注入永久污染（评审 I-1 实证）。守卫后：出生刻读数为
+    // 有限（0），此后正常累计。
+    const m = new Match(7, ["pacifist"], new Map(), { ...V25_CONFIG, resTotalBudget: 1000 }, {
+        envRng: baseEnvRng(0.05),
+        presetRng: new ScriptedRng([], 0.3),
+        arrivalRng: new ScriptedRng([0.128], 0), // arrival = 1 + floor(0.128·250) = 33
+    });
+    const tr = new ViewTracker(m);
+    m.start(() => tr.update());
+    expect(m.playerSlot).toBe(71); // 增长刻出生（new_n−1 = 71）
+    const v1 = tr.update();
+    expect(Number.isFinite(v1.reward!.total)).toBe(true); // 出生刻奖励有限（未注入 NaN）
+    expect(m.stats().loot).toBe(0); // NaN 污染会使此后一切读数变 NaN
+    m.submitAction(1, -1); // t34：DEVELOP（数组已按 n=72 分配——正常路径）
+    const v2 = tr.update();
+    expect(Number.isFinite(v2.reward!.total)).toBe(true);
+    expect(v2.reward!.total).toBeGreaterThan(0); // softsign 津贴正常累计
+});
+
+test("same-tick recycle of the player's slot must still end the game (died_this_tick, not env.alive)", () => {
+    // 走查回归（2026-11-04）：solo 判死原用 !env.alive[playerSlot]——v2.5 同刻复用为
+    // 缺省后，玩家死亡的同一刻其槽位即被复用（死者=最小死槽）→ alive=1（新 AI 住客）
+    // → 死亡漏检、游戏不结束、玩家无缝操控新住客（"重生"）。修复：判死走
+    // died_this_tick 事件流（对复用时序免疫——同在线 processDeaths 的口径）。
+    const mk = () =>
+        new Match(7, ["random"], new Map(), V25_CONFIG, {
+            arrivalRng: ARR1(),
+            envRng: baseEnvRng(),
+            presetRng: new ScriptedRng([1, 1, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 4], 0.5),
+        });
+    const m = mk();
+    m.start();
+    m.submitAction(1, -1); // t1：DEVELOP（刻中探测）
+    m.submitAction(1, -1); // t2：slot0 入侵玩家
+    expect(m.phase).toBe("awaiting-rechoice");
+    // 接缝：耗尽未生槽 + 池够——玩家死亡的同刻其槽位即被复用（三级出生第 2 级）
+    for (let i = 5; i < 36; i++) {
+        m.env.spawn_tick[i] = 1;
+        m.env.alive[i] = 1;
+    }
+    m.env.free_pool = 20;
+    m.env.pending_spawns[0] = 12.5;
+    m.submitRechoice(0); // 保持原动作（SILENT）→ 死于入侵
+    // 同刻复用确实发生（新住客在场——alive 判死此时读到 1，正是漏检根源）
+    expect(m.env.alive[4]).toBe(1);
+    // 死亡仍须被检出：游戏结束（修复前 = awaiting-action + getEnd() null 的"无缝重生"）
+    expect(m.phase).toBe("ended");
+    const end = m.getEnd() as Extract<EndView, { kind: "dead" }>;
+    expect(end.kind).toBe("dead");
+    expect(end.cause).toBe("unknown"); // Q19：同刻复用在事件流装配前清死因 → unknown 兜底
+    expect(end.ticks).toBe(2); // 入席快照：死亡刻 env.t=3 − 入席 t=1（复用覆写免疫）
+});
+
+test("arrival: world ends before arrival → unborn ending", () => {
+    const m = new Match(7, ["pacifist"], new Map(), { ...V25_CONFIG, tMax: 6 }, {
+        envRng: baseEnvRng(),
+        presetRng: new ScriptedRng([], 0.3),
+        arrivalRng: new ScriptedRng([0.999], 0), // arrival = 1 + floor(0.999·6) = 6
+    });
+    m.env.pending_spawns[0] = 9999; // 抑制全部出生 → 空转到 t_max
+    m.start();
+    expect(m.getEnd()).toEqual({ kind: "unborn" });
+    expect(m.phase).toBe("ended");
+});
+
+test("rechoice widened: any action accepted (valid-gated) — non-5/6 no longer rejected", () => {
+    // 用户 2026-11-01（动作格反咬项）：重选 = 任意动作 ∪ 反咬。DEVELOP(1) 重选合法
+    //（无门）——受害者仍死于入侵（非 5/6 重选不改变入侵结局）；invasion 视图携带
+    // 本刻原动作（重选提示的"保持原动作"数据源）。
+    const mk = () =>
+        new Match(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
+            envRng: baseEnvRng(),
+            presetRng: new ScriptedRng([1, 1, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 4], 0.5),
+        });
+    const m = mk();
+    m.start();
+    m.submitAction(1, -1); // t1：DEVELOP（刻中探测）
+    m.submitAction(1, -1); // t2：slot0 入侵玩家
+    expect(m.phase).toBe("awaiting-rechoice");
+    const tr = new ViewTracker(m);
+    const v = tr.update();
+    expect(v.invasion).toEqual({ invaderId: 0, originalAction: 1 }); // 原动作 = 上窗提交的 DEVELOP
+    expect(() => m.submitRechoice(1)).not.toThrow(); // 旧实现：非 5/6 即拒
+    const end = m.getEnd() as Extract<EndView, { kind: "dead" }>;
+    expect(end.kind).toBe("dead");
+    expect(end.cause).toBe("invade"); // 重选 DEVELOP 不救
 });

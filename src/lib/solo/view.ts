@@ -36,6 +36,8 @@ export interface MarkerView {
     x: number;
     y: number;
     state: "self" | "queued" | "known" | "observed" | "public" | "domain";
+    /** v2.5 self_public：自身被公开 → 白环旗标（与公开文明同形渲染；仅自身标记用） */
+    revealed?: boolean;
     /** 已观测者的精确情报（封存者显示冻结值） */
     tech?: number;
     res?: number;
@@ -65,17 +67,26 @@ export interface MatchView {
     tMax: number;
     nAlive: number;
     freePool: number;
-    self: { slot: number; tech: number; res: number; inDomain: boolean; windup: boolean } | null;
+    self: {
+        slot: number;
+        tech: number;
+        res: number;
+        inDomain: boolean;
+        windup: boolean;
+        /** v2.5 self_public：自身坐标已对全体公开（持存——黑域不洗） */
+        public: boolean;
+    } | null;
     markers: MarkerView[];
     /** 玩家本刻合法动作（env valid 行） */
     valid: boolean[];
     /** 目标候选（selectTargets 玩家行；四目标动作共用） */
     targetCandidates: number[];
-    invasion: { invaderId: number } | null;
+    /** 被入侵重选（v2.5：originalAction = 本刻原动作——重选提示"保持原动作"数据源） */
+    invasion: { invaderId: number; originalAction?: number } | null;
     end: EndView | null;
     /** 奖励展示（未生 null） */
     reward: RewardView | null;
-    /** 自身面板读数域 + 行动门理由（配置注入后与 V24_CONFIG 可能不同——读 env.cfg） */
+    /** 自身面板读数域 + 行动门理由（配置注入后与 V25_CONFIG 可能不同——读 env.cfg） */
     panel: { gateObserveTech: number; gateStrikeTech: number; resMax: number };
     /** 会话环境配置（供行动格门理由/入侵模态理由读真实门槛） */
     cfg: import("@/lib/engine/config").EnvConfig;
@@ -93,6 +104,9 @@ export class ViewTracker {
     private prevObserved = new Set<number>();
     private prevKnownAlive = new Set<number>();
     private prevPublic = new Set<number>();
+    /** v2.5 self_public：上刻自身公开旗标 + 上刻生效动作是否 BALL（自曝翻转去重） */
+    private prevSelfPublic = false;
+    private prevSelfBall = false;
     /** 域封存情报：slot → 声明刻末（风窗刻末）的 tech/res 快照（评审 Important 1 修复） */
     private frozenIntel = new Map<number, { tech: number; res: number }>();
     private prevBirths = 0;
@@ -155,6 +169,7 @@ export class ViewTracker {
                     x: env.pos[p * 2],
                     y: env.pos[p * 2 + 1],
                     state: env.in_domain[p] ? "domain" : "self",
+                    revealed: env.public_[p] === 1, // v2.5：自身公开 → 白环（不降级 self 态）
                     tech: env.tech[p],
                     res: env.res[p],
                 },
@@ -205,11 +220,18 @@ export class ViewTracker {
                           res: env.res[p],
                           inDomain: env.in_domain[p] === 1,
                           windup: env.domain_windup[p] === 1,
+                          public: env.public_[p] === 1,
                       },
             markers,
             valid,
             targetCandidates,
-            invasion: m.phase === "awaiting-rechoice" ? { invaderId: m.getPendingInvader() ?? 0 } : null,
+            invasion:
+                m.phase === "awaiting-rechoice"
+                    ? {
+                          invaderId: m.getPendingInvader() ?? 0,
+                          originalAction: m.getPendingOriginal()?.action,
+                      }
+                    : null,
             end: m.getEnd(),
             // 奖励展示（未生 null）：配置流（精确引擎值）+ 四臂（原料 × 固定臂参数）
             reward:
@@ -250,9 +272,10 @@ export class ViewTracker {
 
         if (p === null) return; // 未生：无知识图可 diff
 
-        // 奖励累计（配置流 total 用引擎精确值；原料供四臂/分量组合）
-        this.lastTickReward = r.rewards[p];
-        this.cumReward += r.rewards[p];
+        // 奖励累计（配置流 total 用引擎精确值；原料供四臂/分量组合）。长度守卫
+        //（评审 I-1）：_grow 扩容刻的 rewards 按旧 n 分配——增长槽越界读 → NaN 污染
+        this.lastTickReward = p < r.rewards.length ? r.rewards[p] : 0;
+        this.cumReward += this.lastTickReward;
         addIngredients(this.cumIng, r.rewardDetail, r.deadNow, p);
 
         // ① 自有动作结果
@@ -282,6 +305,17 @@ export class ViewTracker {
                 this.emit(tick, "log.ownReveal", { id: j });
             }
         }
+
+        // ⑫(v2.5 翻转)：自身被公开（self_public 语义落地，用户 2026-11-01）——
+        // public 0→1 翻转记 log.revealed（无归因——玩家不知是谁揭露的）。自己的
+        // BROADCAST_ALL 已在动作刻发 log.ownBroadcast、翻转隔一刻到阶段 1 → 以
+        // 上刻动作去重（prevSelfBall），不重复记。
+        const selfBallNow = env.last_action[p] === A_BALL;
+        if (env.public_[p] === 1 && !this.prevSelfPublic && !this.prevSelfBall) {
+            this.emit(tick, "log.revealed");
+        }
+        this.prevSelfPublic = env.public_[p] === 1;
+        this.prevSelfBall = selfBallNow;
 
         // ③④ 已知增量（自身 known 行 diff；公开路径 → broadcast，否则 → contact）
         const knownNow = new Set<number>();
@@ -344,8 +378,9 @@ export class ViewTracker {
         for (const j of this.prevKnownAlive) {
             if (!knownAliveNow.has(j)) this.emit(tick, "log.dark");
         }
-        // ⑥b 槽复用配套（仅 cfg.slotReuse 世界可达）：**known 列被引擎复位**为驱逐
-        // 判据——true→false 仅复用发生（env 的 known 永不遗忘，死亡不清列）。以
+        // ⑥b 槽复用配套（v2.5 起复用为缺省行为——一切世界可达）：**known 列被引擎
+        // 复位**为驱逐判据——true→false 仅复用发生（env 的 known 永不遗忘，死亡不清
+        // 列）。以
         // 死亡为判据是错的（评审 Critical #1）：下一刻 knownNow 重建时死者重新入
         // 集，而 prevKnown 已删 ⇒ 幻影 contact（死者坐标）+ 幻影 observed（**死者
         // 临终 tech/res**——规则③⑪情报泄漏），单机同样中招。非复用路径此循环恒

@@ -10,7 +10,6 @@ import {
 } from "@/components/action-grid";
 import { EndOverlay } from "@/components/end-overlay";
 import { EventLog } from "@/components/event-log";
-import { InvasionModal } from "@/components/invasion-modal";
 import type { CivLike } from "@/components/marker";
 import { Panel } from "@/components/panel";
 import { StarChart } from "@/components/star-chart";
@@ -55,15 +54,19 @@ const GHOST: CivLike[] = [{ id: -1, x: 50, y: 50, state: "queued" }];
 /**
  * /online：token 驱动单页流（DESIGN.md §10.11/§10.11a/§11）。大厅 = 排队卡 +
  * 幽灵星图；出生后 = /match 控制台同构（无 AuxButtons——参谋/奖励面板为单人专属，
- * 用户 2026-10-12 裁决③）+ 刻截止读数 + 入侵倒计时（timed）。
+ * 用户 2026-10-12 裁决③）+ 刻截止读数。
  *
  * **无执行钮（用户 2026-10-14 裁定）：选择即提交 + 刻末安全网**——姿态/无目标
  * 一次性点击即 POST（服务端逐窗后写覆盖）；目标动作武装后选中即 POST。刻末
  * deadline−2s：本窗无提交且姿态非静默 → 自动续交（姿态每刻自动延续）。silent
  * 不发包（服务端缺省即静默——记录零成本）。隐藏页计时器被浏览器节流 → 不触发
  * → 静默（AFK 语义）。pending 为派生量：本窗已提交的一次性动作（刻后自动回退
- * 姿态高亮）。入侵模态"取消"= 本地关闭（不再发 -1——无快进后截止保原即为环境
- * 语义）。
+ * 姿态高亮）。
+ *
+ * **v2.5 重选模式（用户 2026-11-01：警报弹窗退役，动作格反咬项）**：被入侵且
+ * 未提交重选（ConsoleView.rechoice === null）时动作格整体切换为重选界面（任意
+ * 动作 ∪ 反咬直提；到刻 = 保持原动作——环境语义）；提交后恢复普通提交通道
+ *（当窗仍可提交下一刻动作，安全网随之武装）。窗口计时 = 控制台既有刻读数。
  */
 export default function OnlinePage() {
     const { t } = useI18n();
@@ -72,7 +75,6 @@ export default function OnlinePage() {
     const { submitAction, submitRechoice } = session;
     const [armed, setArmed] = useState<ActionId | null>(null);
     const [stance, setStance] = useState<ActionId>("silent");
-    const [dismissedInv, setDismissedInv] = useState("");
     // 安全网刻号闸（走查回归 2026-10-28）：每刻至多一次提交——防 effect 重排 ×
     // setTimeout(0) × fire-and-forget POST 的无界请求风暴
     const netFiredTickRef = useRef(-1);
@@ -112,8 +114,12 @@ export default function OnlinePage() {
     useEffect(() => {
         if (tickEnds === null || tickNow === null || s === null || s.kind !== "console") return;
         const v = s.view;
+        // v2.5：重选已提交 → 恢复下一刻提交通道（安全网随之武装）
         const canAct =
-            v.self !== null && v.end === null && v.invasion === null && v.phase === "awaiting-action";
+            v.self !== null &&
+            v.end === null &&
+            (v.phase === "awaiting-action" ||
+                (v.phase === "awaiting-rechoice" && s.rechoice !== null));
         const delay = safetyNetDelay({
             nowMs: Date.now(),
             tickEndsAtMs: tickEnds,
@@ -155,7 +161,7 @@ export default function OnlinePage() {
     if (s.kind === "lobby") {
         const tickStr = `${String(s.world.tick).padStart(3, "0")}/${s.world.tMax}`;
         return (
-            <div className="flex min-h-svh flex-col gap-3 p-3">
+            <div className="flex min-h-svh flex-col">
                 <TopBar
                     left={<BackLink href="/" />}
                     right={<h1 className="text-base text-ink">{t("online.title")}</h1>}
@@ -216,8 +222,14 @@ export default function OnlinePage() {
                 m.state === "domain",
         );
     const targeting = armed !== null && TARGETING.has(armed);
+    // v2.5 canAct 放宽：重选已提交（s.rechoice ≠ null）→ 当窗恢复下一刻提交通道
     const canAct =
-        v.self !== null && v.end === null && v.phase === "awaiting-action" && v.invasion === null;
+        v.self !== null &&
+        v.end === null &&
+        (v.phase === "awaiting-action" ||
+            (v.phase === "awaiting-rechoice" && s.rechoice !== null));
+    // 重选模式：被入侵且未提交重选（弹窗退役——2026-11-01）
+    const rechoicing = v.invasion !== null && s.rechoice === null;
 
     // 派生 pending：本窗已提交的一次性动作（刻后随 submission 清空自动回退姿态）
     const pending: PendingAction | null =
@@ -239,10 +251,9 @@ export default function OnlinePage() {
     };
 
     const tickStr = `${String(v.tick).padStart(3, "0")}/${v.tMax}`;
-    const invKey = v.invasion !== null ? `${s.timing.tick}-${v.invasion.invaderId}` : "";
 
     return (
-        <div className="flex min-h-svh flex-col gap-3 p-3">
+        <div className="flex min-h-svh flex-col">
             <TopBar
                 left={<BackLink href="/" />}
                 right={
@@ -257,7 +268,7 @@ export default function OnlinePage() {
                             {t("match.pool")}{" "}
                             <span className="text-ink tnum">{v.freePool.toFixed(1)}</span>
                         </span>
-                        {v.end === null && v.invasion === null && (
+                        {v.end === null && (
                             <span className="text-dim">
                                 {t("online.next", { s: s.timing.remainingSeconds })}
                             </span>
@@ -267,103 +278,98 @@ export default function OnlinePage() {
             />
             {offlineBanner}
 
-            {armed !== null && (
-                <div className="flex items-center justify-between rounded-panel border border-lethal bg-panel px-3 py-2">
-                    <p className="text-sm text-lethal">{t("match.target")}</p>
-                    <div className="flex gap-2">
-                        {SKIPPABLE.has(armed) && (
+            <main className="flex flex-1 flex-col gap-3 p-3">
+                {armed !== null && (
+                    <div className="flex items-center justify-between rounded-panel border border-lethal bg-panel px-3 py-2">
+                        <p className="text-sm text-lethal">{t("match.target")}</p>
+                        <div className="flex gap-2">
+                            {SKIPPABLE.has(armed) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const id = armed;
+                                        setArmed(null);
+                                        submitAction(ACTION_NUM[id], -1); // 最近已知兜底，即提交
+                                    }}
+                                    className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
+                                >
+                                    {t("match.target.skip")}
+                                </button>
+                            )}
                             <button
                                 type="button"
-                                onClick={() => {
-                                    const id = armed;
-                                    setArmed(null);
-                                    submitAction(ACTION_NUM[id], -1); // 最近已知兜底，即提交
-                                }}
+                                onClick={() => setArmed(null)} // 取消 = 本地放弃（本窗已有提交不动）
                                 className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
                             >
-                                {t("match.target.skip")}
+                                {t("match.target.cancel")}
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_540px]">
+                    <div className="mx-auto w-full max-w-[min(720px,calc(100svh-20rem))]">
+                        <StarChart
+                            civs={v.markers}
+                            selectableIds={targeting ? v.targetCandidates : []}
+                            pingIds={[]}
+                            invaderIds={v.invasion !== null ? [v.invasion.invaderId] : []}
+                            onPick={onPick}
+                        />
+                    </div>
+                    <div className="flex flex-col gap-3">
+                        {v.self !== null ? (
+                            <StatusPanel
+                                tech={v.self.tech}
+                                res={v.self.res}
+                                inDomain={v.self.inDomain}
+                                gates={[v.panel.gateObserveTech, v.panel.gateStrikeTech]}
+                                resMax={v.panel.resMax}
+                            />
+                        ) : (
+                            <div className="rounded-panel border border-subtle bg-panel px-3 py-4 text-center">
+                                <p className="anim-alert-blink text-sm text-dim">
+                                    {t("match.waitBirth")}
+                                </p>
+                            </div>
                         )}
-                        <button
-                            type="button"
-                            onClick={() => setArmed(null)} // 取消 = 本地放弃（本窗已有提交不动）
-                            className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
-                        >
-                            {t("match.target.cancel")}
-                        </button>
+                        {s.submission !== null && v.end === null && (
+                            <p className="tnum rounded-panel border border-subtle bg-panel px-3 py-2 text-sm text-dim">
+                                {t("online.submitted", { t: s.timing.tick + 1 })}
+                            </p>
+                        )}
+                        {s.rechoice !== null && v.invasion !== null && v.end === null && (
+                            <p className="rounded-panel border border-subtle bg-panel px-3 py-2 text-sm text-dim">
+                                {t("rechoice.submitted")}
+                            </p>
+                        )}
+                        {canAct && (
+                            <p className="text-xs text-faint">
+                                {t("online.autoCommit")}
+                                {session.lastAction !== null ? ` · ${t("online.enterHint")}` : ""}
+                            </p>
+                        )}
+                        <ActionGrid
+                            tech={v.self?.tech ?? 0}
+                            res={v.self?.res ?? 0}
+                            hasKnown={hasKnown}
+                            valid={v.valid}
+                            stance={stance}
+                            pending={pending}
+                            armed={armed}
+                            onSelect={onSelect}
+                            onArm={setArmed}
+                            cfg={v.cfg}
+                            rechoice={rechoicing ? v.invasion : null}
+                            onRechoice={submitRechoice}
+                            onKeepOriginal={() => submitRechoice(-1)}
+                            rechoiceDeadline={s.timing.remainingSeconds}
+                        />
                     </div>
                 </div>
-            )}
+                <EventLog events={session.log} />
+            </main>
 
-            <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_540px]">
-                <div className="mx-auto w-full max-w-[min(720px,calc(100svh-20rem))]">
-                    <StarChart
-                        civs={v.markers}
-                        selectableIds={targeting ? v.targetCandidates : []}
-                        pingIds={[]}
-                        onPick={onPick}
-                    />
-                </div>
-                <div className="flex flex-col gap-3">
-                    {v.self !== null ? (
-                        <StatusPanel
-                            tech={v.self.tech}
-                            res={v.self.res}
-                            inDomain={v.self.inDomain}
-                            gates={[v.panel.gateObserveTech, v.panel.gateStrikeTech]}
-                            resMax={v.panel.resMax}
-                        />
-                    ) : (
-                        <div className="rounded-panel border border-subtle bg-panel px-3 py-4 text-center">
-                            <p className="anim-alert-blink text-sm text-dim">
-                                {t("match.waitBirth")}
-                            </p>
-                        </div>
-                    )}
-                    {s.submission !== null && v.end === null && v.invasion === null && (
-                        <p className="tnum rounded-panel border border-subtle bg-panel px-3 py-2 text-sm text-dim">
-                            {t("online.submitted", { t: s.timing.tick + 1 })}
-                        </p>
-                    )}
-                    {canAct && (
-                        <p className="text-xs text-faint">
-                            {t("online.autoCommit")}
-                            {session.lastAction !== null ? ` · ${t("online.enterHint")}` : ""}
-                        </p>
-                    )}
-                    <ActionGrid
-                        tech={v.self?.tech ?? 0}
-                        res={v.self?.res ?? 0}
-                        hasKnown={hasKnown}
-                        valid={v.valid}
-                        stance={stance}
-                        pending={pending}
-                        armed={armed}
-                        onSelect={onSelect}
-                        onArm={setArmed}
-                        cfg={v.cfg}
-                    />
-                </div>
-            </div>
-
-            <EventLog events={session.log} />
-
-            {v.invasion !== null && dismissedInv !== invKey && (
-                <InvasionModal
-                    invaderId={v.invasion.invaderId}
-                    timed /* 在线 = 当刻剩余倒计时（§10.7/§13），恒满时长 */
-                    remainingSeconds={session.invasionLeft}
-                    onCounter={() => submitRechoice(6)}
-                    onDomain={() => submitRechoice(5)}
-                    onCancel={() => setDismissedInv(invKey)} /* 本地关闭：截止保原即环境语义 */
-                    domainDisabled={!v.valid[5]}
-                    domainTitle={
-                        !v.valid[5]
-                            ? t("actions.disabled.tech", { v: v.cfg.gateDomainTech })
-                            : undefined
-                    }
-                />
-            )}
             {v.end !== null && (
                 <EndOverlay
                     end={v.end}

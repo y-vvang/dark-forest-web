@@ -18,7 +18,10 @@ export interface EnvSnapshot {
     public: number[];
     in_domain: number[];
     domain_windup: number[];
-    pending_reveal: ["self", number][];
+    /** v2.5 新态（录制端同款，随金标准轨迹逐位比对） */
+    under_attack: number[];
+    last_invader: number[];
+    pending_reveal: ["self" | "other", number][];
     pending_counter: number[];
     last_action: number[];
     first_detect_tick: number[];
@@ -48,7 +51,9 @@ export function snapshot(env: DarkForestEnv2): EnvSnapshot {
         public: [...env.public_],
         in_domain: [...env.in_domain],
         domain_windup: [...env.domain_windup],
-        pending_reveal: env.pending_reveal.map((x) => [...x] as ["self", number]),
+        under_attack: [...env.under_attack],
+        last_invader: [...env.last_invader],
+        pending_reveal: env.pending_reveal.map((x) => [...x] as ["self" | "other", number]),
         pending_counter: [...env.pending_counter],
         last_action: [...env.last_action],
         first_detect_tick: [...env.first_detect_tick],

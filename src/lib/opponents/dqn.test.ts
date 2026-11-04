@@ -8,7 +8,7 @@ const OUTS = JSON.parse(
     readFileSync("src/lib/engine/testdata/dqn-outputs.json", "utf8"),
 ) as { arms: { arm: string; inputs: number[][]; outputs: number[][] }[] };
 
-test("dqn parity vs numpy forward (all 4 v2.4 arms, |ΔQ|<=1e-9)", () => {
+test("dqn parity vs numpy forward (all 5 v2.5 models: 4 arms + champion, |ΔQ|<=1e-9)", () => {
     for (const rec of OUTS.arms) {
         const w = JSON.parse(readFileSync(`public/models/${rec.arm}.json`, "utf8")) as ModelWeights;
         for (let r = 0; r < 10; r++) {
@@ -76,7 +76,7 @@ test("loadModel path shape (static JSON round-trip via JSON.parse)", () => {
     const w = JSON.parse(readFileSync("public/models/a_classic.json", "utf8")) as ModelWeights;
     expect(w.arm).toBe("a_classic");
     expect(w.updates).toBe(149987);
-    expect(w.W0.length).toBe(36);
+    expect(w.W0.length).toBe(38); // v2.5：obs 38（champion 同形——维度自权重推导）
     expect(w.W0[0].length).toBe(64);
     expect(w.W1.length).toBe(64);
     expect(w.W1[0].length).toBe(64);
@@ -85,4 +85,8 @@ test("loadModel path shape (static JSON round-trip via JSON.parse)", () => {
     expect(w.b0.length).toBe(64);
     expect(w.b1.length).toBe(64);
     expect(w.b2.length).toBe(8);
+    const champ = JSON.parse(readFileSync("public/models/champion.json", "utf8")) as ModelWeights;
+    expect(champ.arm).toBe("champion");
+    expect(champ.updates).toBe(249789); // v3.0 champion league 1000ep（seed 42）
+    expect(champ.W0.length).toBe(38);
 });

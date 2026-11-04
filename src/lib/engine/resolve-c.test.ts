@@ -100,13 +100,14 @@ test("observe with only a domain-known target: no intel, no exposure (stale matr
     expect(env.pending_counter).toEqual([]); // 无目标 → 不曝光
 });
 
-test("birth: pool-afforded endogenous spawn, NO tech inheritance (env2_v24.py:249-275)", () => {
+test("birth: pool-afforded endogenous spawn, NO tech inheritance (env2_v25.py:309-359)", () => {
     // 队列对齐：探测 1296 + boom 36 + 流失 36（全 0.5 无事件）→ 新预滚 12.5（v2.4 出生
     // 不再抽取科技——每出生少 1 个 RNG 值，此处脚本恰一个尾值）
     const env = makeEnv([...Array(1296 + 36 + 36).fill(0.5), 12.5], 0.5);
     env.reset(); // pool=110，预滚 12.5
     const { result } = tick(env, new Int32Array(36));
     expect(env.tech[4]).toBe(1.0); // v2.4 无继承：出生科技恒 tech_spawn_lo
+    expect(env.peak_tech[4]).toBe(1.0); // v2.5：逐代峰值在出生时重置（:356）
     expect(env.res[4]).toBe(12.5);
     expect(env.spawn_tech[4]).toBe(1.0);
     expect(env.spawn_tick[4]).toBe(1);
@@ -122,13 +123,14 @@ test("birth: pool-afforded endogenous spawn, NO tech inheritance (env2_v24.py:24
     assertConservation(env);
 });
 
-test("Q11: one-shot slots — dead slot never reused (env2.py:233)", () => {
+test("birth tier 1: unborn slot preferred over the same-tick dead slot (env2_v25.py:325-327)", () => {
     const env = makeEnv();
     env.reset();
     tick(env, new Int32Array(36)); // t 0→1：slot 4 出生
     expect(env.alive[4]).toBe(1);
     // slot 0 打死 slot 4（p=0.95 > 0.5）；尸体 12.5 同刻入池 → 池 110 ≥ 预滚
-    // → 同刻内生出生取 slot 5（阶段 10 晚于 8b），绝不复用 4
+    // → 同刻内生出生（阶段 10 晚于 8b）：v2.5 三级偏好首选未生槽 5——同刻死槽 4
+    // 仅在未生槽耗尽后才被复用（同刻复用语义由 env-reuse.test 钉住）
     env.tech[0] = 9;
     env.known[0 * 36 + 4] = 1;
     const actions = new Int32Array(36);

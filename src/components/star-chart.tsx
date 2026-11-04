@@ -24,6 +24,7 @@ export function StarChart({
     civs,
     selectableIds = [],
     pingIds = [],
+    invaderIds = [],
     onPick,
     className = "",
 }: {
@@ -32,6 +33,8 @@ export function StarChart({
     selectableIds?: number[];
     /** civs playing the new-contact ping this render */
     pingIds?: number[];
+    /** v2.5 入侵者高亮（重选窗口）：这些 id 渲染为常显 lethal 环 + 警报光 */
+    invaderIds?: number[];
     onPick?: (civ: CivLike) => void;
     className?: string;
 }) {
@@ -65,6 +68,7 @@ export function StarChart({
                     civ={cam(civ)}
                     selectable={selectableIds.includes(civ.id)}
                     ping={pingIds.includes(civ.id)}
+                    threat={invaderIds.includes(civ.id)}
                     onPick={onPick}
                 />
             ))}

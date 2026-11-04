@@ -14,7 +14,8 @@ export interface TickEntry {
     endedAtMs: number | null;
     /** 本窗口收集的下一刻人类提交：slot → [action, target]；缺 = SILENT */
     nextActions: Record<string, [number, number]>;
-    /** 本刻受害者的人类重选：slot → action（5|6）；-1 = 明确保持原动作 */
+    /** 本刻受害者的人类重选：slot → action（v2.5 起任意 [0,8)——用户 2026-11-01
+     *  动作格反咬项；目标不可重选，目标动作沿用本刻原目标）；-1 = 明确保持原动作 */
     rechoices: Record<string, number>;
 }
 
@@ -97,6 +98,9 @@ export interface ConsoleView {
     view: OnlineView;
     /** 本窗口已提交的下一刻动作（null = 未提交 → 到点 SILENT） */
     submission: { action: number; target: number } | null;
+    /** 本窗口已提交的本刻重选（null = 未重选；v2.5 重选模式退出判据——客户端
+     *  据此从重选格恢复普通提交通道） */
+    rechoice: number | null;
 }
 
 export type StateResponse = LobbyPublicView | LobbyView | ConsoleView;
@@ -117,7 +121,7 @@ export interface ActionRequest {
 export interface RechoiceRequest {
     token: string;
     tick: number;
-    /** 5 = 声明黑域 | 6 = 反咬 | -1 = 明确保持原动作（协议兼容保留；与缺席等价） */
+    /** 任意合法动作 [0,8)（6 = 反咬——无需目标）| -1 = 明确保持原动作（协议兼容；与缺席等价） */
     action: number;
 }
 

@@ -1,12 +1,15 @@
 /**
- * Q1–Q13 综合锁定（docs/env-model-v23.md §0）。
+ * Q1–Q16 综合锁定（docs/env-model-v23.md §0）。
  * 各 quirk 的行为开发已在所属阶段先行 TDD（Q1=reset、Q4/9/12=resolve-b、
  * Q5/6=resolve-c、Q3=obs）；本文件补齐未单独覆盖者并交叉引用。
  * v2.4 新增 Q13：BOTHER 揭露的归因歧义（对被揭露者不可见）→ resolve-b.test。
+ * v2.5：Q11 一次性槽位被死槽复用取代（env-reuse.test）；Q15 偏离条款消解；
+ * Q14 归因歧义部分改观（被揭露者自知 public——v2.5 self_public）。
  */
 import { expect, test } from "bun:test";
 
 import { makeEnv, tick } from "./test-helpers";
+import { OBS_DIM } from "./types";
 
 // Q1 站位拒绝采样读取旧位置 → reset.test.ts（"consecutive resets"用例，抽取计数 962 锁定）
 // Q4 风窗免疫入侵（重选 BD 取消）→ resolve-b.test.ts（"victim re-choosing BD"）
@@ -39,8 +42,8 @@ test("Q2: broadcaster self-knowledge enters its own known-alive obs count (env2_
     tick(env, actions); // 入队
     tick(env, new Int32Array(36)); // 结算 → known[0,0]=1
     expect(env.known[0 * 36 + 0]).toBe(1);
-    const r0 = env.obs().slice(0 * 36, 1 * 36);
-    expect(r0[2]).toBe(Math.fround(1 / 35)); // 自知计入已知存活数
+    const r0 = env.obs().slice(0, OBS_DIM);
+    expect(r0[2]).toBe(Math.fround(1 / 36)); // 自知计入已知存活数（v2.5 n_norm 分母）
 });
 
 test("Q3+Q4: strike at a windup target produces no event (anyKnown survives sanitize, matrix filters it)", () => {
@@ -66,10 +69,10 @@ test("Q3: domain target keeps geometry in near blocks, intel masked, feature sta
     env.known[0 * 36 + 1] = 1;
     env.known[0 * 36 + 2] = 1;
     env.in_domain[1] = 1;
-    const r0 = env.obs().slice(0, 36);
-    expect(r0[15]).toBe(Math.fround((10 - 0.02) / 50)); // k=0 = 域内 slot1——几何保留（feature-major）
-    expect(r0[24]).toBe(-1); // 情报掩蔽
-    expect(r0[33]).toBe(0); // in_domain 特征恒 0（Q3）
+    const r0 = env.obs().slice(0, OBS_DIM);
+    expect(r0[17]).toBe(Math.fround((10 - 0.02) / 50)); // k=0 = 域内 slot1——几何保留（feature-major）
+    expect(r0[26]).toBe(-1); // 情报掩蔽
+    expect(r0[35]).toBe(0); // in_domain 特征恒 0（Q3）
 });
 
 test("Q7: exists getter mirrors env2_v24.py:244-247 (spawn_tick-gated, unused by resolve)", () => {
@@ -84,5 +87,5 @@ test("Q7: exists getter mirrors env2_v24.py:244-247 (spawn_tick-gated, unused by
 });
 
 // Q9 反咬无需有效目标 → resolve-b.test（"counter-invade needs no valid target"）
-// Q11 一次性槽位 → resolve-c.test（"Q11: one-shot slots"）
+// Q11 一次性槽位 → v2.5 起被死槽复用取代（env-reuse.test 全套）
 // Q12 护盾不耗 RNG → resolve-b.test（"shield block: no RNG consumed"）

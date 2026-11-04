@@ -1,9 +1,10 @@
-# DarkForestGrid v2.4 环境移植规格（Python → TypeScript 权威对照）
+# DarkForestGrid v2.5 环境移植规格（Python → TypeScript 权威对照）
 
 > **用途**：网页游戏对实验环境的忠实移植规格。一切以代码为准：
-> `experiment/experiment/env2_v24.py`（654 行，类 `DarkForestEnv2`）+ `experiment/experiment/config_v24.yaml`。
-> 本文所有行号均指 env2_v24.py。v2.3-fix 原版见 git 历史（env2.py 629 行；两者共享 v2.3-fix
-> 的打击修复与守恒账本，v2.4 为观测优先信息原则 + 同起跑线 + 奖励臂轮次）。
+> `experiment/experiment/env2_v25.py`（748 行，类 `DarkForestEnv2`）+ `experiment/experiment/config_v25.yaml`。
+> 本文行号优先指 env2_v25.py（v2.4 结构未变处沿引 env2_v24.py 行号）。v2.4 相对 v2.5 的
+> diff 仅 104 插入/10 删除——resolve/_valid/select_targets/_pair_dist/打击/护盾/探测/经济/
+> 黑域/奖励**逐字节相同**；v2.5 变更清单见 §0.2。v2.3-fix 原版见 git 历史。
 > 配套：`docs/ai-opponents.md`（DQN 推理与预制策略）。CLAUDE.md 为总入口。
 
 ## 0. 移植原则与已知陷阱（quirk 清单）
@@ -26,11 +27,15 @@
 | Q8 | `_obs` 中 `crowd` 计算后未使用 | :308 | v1.x 领土拥挤遗留，无效果，不移植 |
 | Q9 | 反咬不需要合法目标 | :527-535 | 被入侵者重选动作=INVADE 即触发互毁，环境不看目标是谁 |
 | Q10 | 反击入侵仍会暴露 | :369-375 | 入侵通知在 begin_tick 即发生；受害者即便当场声明黑域取消入侵，入侵者已被知晓（白暴露） |
-| Q11 | 槽位一次性 | :258 | 出生只取 `spawn_tick>1e8` 的最靠前空槽；死后槽位**不复用** → 单局最多 36 次出生（含初始 4） |
-| Q15 | **在线槽复用**（明示偏离） | cfg.slotReuse | 用户 2026-10-14"取消 36 上限"：36 未生槽耗尽后取最靠前已死槽重生（仅 `ONLINE_ENV_CONFIG` 开启）。恒星位置不动、零额外 RNG、认知态全清（known 行+列/observed/public/域/风窗/死因/pending_reveal·counter 引用条目）；感知配套见 view.ts ⑥。缺省世界保持硬上限——trace-main-s1/d 实证会耗尽 36 槽，缺省开启即破奇偶 |
+| Q11 | ~~槽位一次性~~ **v2.5 三级出生偏好取代** | env2_v25.py:325-344 | 出生槽偏好：最靠前未生槽 → 最靠前**已死槽复用**（同刻死者即可复用）→ `_grow` 扩容。复用清社会态（known/observed 行列、public、under_attack、in_domain、windup、first_detect_tick、last_action、death_cause；peak_tech 由公共路径重置）；**last_invader 不清**、**pending_reveal/counter 不滤**（见 Q17/Q18） |
+| Q15 | ~~在线槽复用（明示偏离）~~ **已消解** | — | 用户 2026-10-14"取消 36 上限"的偏离条款随实验 v2.5 采纳死槽复用为缺省行为而关闭（2026-11-01）；原游戏的 deadNow 同刻跳过与 pending 过滤是对 v2.5 的偏离，已移除 |
 | Q12 | 阻挡的打击不消耗 RNG | :495-501 | 护盾判定在 p_kill 抽签**之前** continue |
 | Q13 | **掩码行特征 = argsort 平局序伪影** | :327,329-334 | 近邻块候选不足 3 时，`order = np.argsort(big)` 的 ∞ 平局序决定第 k 位是谁；该位的 tech/res/public 特征取**该文明**的 `known_pair ∧ observed` 旗标（距离无关）——Δx/Δy/d 仍被 dmask 清零，但情报旗标会"泄漏"远处公开者。平局序非稳定非索引序 → **须逐位移植 numpy 1.26.4 argsort introsort**（`src/lib/engine/numpy-sort.ts`，2005 numpy 生成矢量锁定）。v2.3 的"补位槽内容确定"断言为侥幸，v2.4 揭露机制使其爆出 |
-| Q14 | **揭露归因歧义**（v2.4 新） | :457-472,435-437 | BOTHER 揭露目标 j：①被揭露者**零感知**（环境无任何通知机制——玩家不知自己已公开）；②他人揭露的第三方 j 在所有观测者视角与"j 自曝"完全同形（known[alive,j]+public[j]，BSELF 同路径）——借刀杀人不可归因，机制即欺骗 |
+| Q14 | **揭露归因歧义**（v2.4 新；v2.5 部分改观） | :457-472,435-437 | BOTHER 揭露目标 j：①被揭露者**自知已公开**（v2.5 self_public 持续可见——但仍**不知是谁**揭露的，归因歧义保留）；②他人揭露的第三方 j 在所有观测者视角与"j 自曝"完全同形（known[alive,j]+public[j]，BSELF 同路径）——借刀杀人不可归因，机制即欺骗 |
+| Q17 | **born-public 穿越**（v2.5 新） | :329-344 | 死槽复用**不滤 pending_reveal**——死者被揭露的延迟公开落在复生者头上（出生即 public）。忠实照抄（游戏侧旧过滤已移除） |
+| Q18 | **last_invader 复用存活**（v2.5 新） | :332-340 | 复用清除清单**不含 last_invader**——复生 df 仍可反咬前任住客的入侵者。忠实照抄 |
+| Q19 | **同刻复用清死因**（v2.5 新） | :340 vs :739 | 复用在 died_this_tick 装配**之前**清 death_cause → 事件流死因 "" 抵达上层（游戏层翻译为 cause.unknown）。Q16 的增长路径外另一处"上游怪味"——行为以代码为准 |
+| Q16 | **_grow 的 last_action 覆盖 bug**（v2.5 新，明示偏离） | env2_v25.py:728 | python resolve 尾部 `self.last_action = eff` 在 _grow 扩容后用旧长数组覆盖补齐数组（**增长刻自身的 resolve 尾部 _obs() 即崩**——本机复现 IndexError，根本活不到 reset）；增长路径实验从未触发（probe: max_alive 9-12），游戏配置面板可调大预算故可达——**TS 照增长语义修复**（eff 拷入新长度数组、新槽保持 A_SILENT；修复后 reset 亦自洽，游戏每局新 env 路径不可达）。**配套消费端守卫**：resolve 返回的 rewards/loot_to/rewardDetail 按旧 n 分配（python 同构）——会话/视图/驱动的增长槽读数须长度守卫（评审 I-1，match/view/rewards/driver 四处） |
 
 另注意：世界是 **[0,100)² 连续坐标**（"Grid"为历史名称，并非离散网格）；恒星位置永不改变；
 `known` 一旦置位永不遗忘。
@@ -48,13 +53,30 @@
 6. **奖励臂参数**：`res_reward_scale`（DEVELOP 刻 +scale·res，>0 才加）与 `attack_reward`
    （打击击杀认领/入侵缴获/揭露各 +attack，默认 0=关；四臂 override 见 §8.1）。
 
+### 0.2 v2.5 相对 v2.4 的变更（env2_v25.py；除此外逐字节相同）
+
+1. **OBS_DIM 36→38**：自身标量 7→9——`[7] under_attack`、`[8] self_public` 追加在
+   domain_windup 后（one-hot 与近邻块整体 +2 移位）。
+2. **归一化固定分母**：knownAlive 与 aliveCount 均除以 `n_norm`（ctor 第 2 位置参数，
+   缺省 36.0，yaml 无此键）并 `clip [0,2]`（v2.4 为 /(n−1) 与 /n）。
+3. **under_attack 滑窗**：`begin_tick` 先清全部、再随入侵通知置位（重选 obs 与下一刻
+   obs 可见，再下一 beginTick 清除；STRIKE 不设）。
+4. **新 env 态 `last_invader[j]`**（缺省 −1，不入 obs；v2b 启发式用；复用不清——Q18）。
+5. **出生三级偏好**（取代 v2.4 槽耗尽即停）：unborn 槽 → 死槽复用（同刻死者即可，
+   社会态全清；Q11/Q17/Q19）→ `_grow` 扩容（n 翻倍、新槽白纸、位置单抽；Q16）。
+   **RNG 差异**：复用/增长分支消耗预滚重抽（v2.4 此处早退零消耗）。
+6. **每次出生 `peak_tech[slot] = tech[slot]`**（逐代峰值重置，:356）。
+7. **self_public**：被揭露者（含自曝者）每刻自知已公开（持久；黑域不洗）。
+8. 终局不变（t_max 或热寂——复用使热寂更罕见但可达）。
+
 ## 1. 参数表（config_v24.yaml 全量 + env2_v24.py 默认值）
 
 ### env 参数（config_v24.yaml:25-62；构造函数 :97-170）
 
 | 参数 | v2.4 值 | 默认 | 语义 |
 |---|---|---|---|
-| `n_agents` | 36 | 12 | 槽位数（一次性，见 Q11） |
+| `n_agents` | 36 | 12 | 槽位数（v2.5：初始槽数——死槽可复用、满员可 _grow，见 Q11/Q16） |
+| `n_norm` | **36.0**（ctor 缺省，yaml 无此键） | 36.0 | v2.5 obs 计数归一化固定分母（clip [0,2]） |
 | `world` | 100.0 | 100.0 | 世界边长；坐标连续，环面 |
 | `detect_radius` | 30.0 | 30.0 | 探测/近邻块半径（硬截断，无衰减） |
 | `t_max` | 250 | 250 | 定长刻数 |
@@ -85,16 +107,16 @@
 | `enable_black_domain` | true | True | 黑域开关 |
 | `spawn_schedule` | [[0,4]] | [(0,12)] | **只用第一项**：初始 4 文明；后续出生纯池驱动 |
 
-### 模型/训练/评测参数（config_v24.yaml:64-86；不属于环境，仅供复现）
+### 模型/训练/评测参数（config_v25.yaml:64-86；不属于环境，仅供复现）
 
-`model`: obs_dim **36**、n_actions **8**、hidden [64,64]；`train`: episodes 600、γ 0.995、lr 6e-4、
+`model`: obs_dim **38**、n_actions **8**、hidden [64,64]；`train`: episodes 600、γ 0.995、lr 6e-4、
 batch 128、replay 150k、target_sync 2000、ε 1.0→0.05（前 50% 回合退火）、seeds [42]；`eval`:
-episodes 150、ε 0.05。（train2_v24 同 v2.3 惟目标请求集扩为 4 动作；model.py 的 ReplayBuffer
+episodes 150、ε 0.05。（train2_v25 同 v2.4 惟 import data2_v25；model.py 的 ReplayBuffer
 有效掩码宽度参数化 `n_valid`——仅训练期，游戏只做推理。）
 
 ### 代码内派生常数
 
-`NEAR_K=3`（:92）；`OBS_DIM = 7+N_ACTIONS+NEAR_K*7 = 36`（:91）；`LOG_REF = log1p(50)`（:313）；
+`NEAR_K=3`（:92）；`OBS_DIM = 9+N_ACTIONS+NEAR_K*7 = 38`（:108）；`LOG_REF = log1p(50)`（:313）；
 近邻 Δ、d 归一化分母 50；res 归一化分母 res_max=20；初始站位最小距离 12.0（Q1）；未出生标记
 `spawn_tick=10^9`。（v2.3 的"出生科技最小跨度 1.0"随无继承删除。）
 
@@ -105,12 +127,14 @@ episodes 150、ε 0.05。（train2_v24 同 v2.3 惟目标请求集扩为 4 动�
 | `pos` | (n,2) float | uniform(0,100)（Q1 拒绝环实际仅二次 reset 生效） | 恒星位置，永不移动 |
 | `tech` | (n,) float | 前 n0 个 ~U[lo,hi]=**1.0**，其余 0 | 科技，无上界 |
 | `res` | (n,) float | 前 n0 个 ~U[5,20]，超 150 按比例缩放（:215-217）；其余 0 | 资源；掠夺后可>res_max |
-| `alive` | (n,) bool | 前 n0 True | 存活；死后永 False（槽不复用） |
+| `alive` | (n,) bool | 前 n0 True | 存活；死后 False 至槽被复用（v2.5 三级出生） |
 | `spawn_tick` | (n,) int | 前 n0 为 0，其余 10⁹ | 出生刻；出生时记 `t+1` |
 | `spawn_tech/spawn_res` | (n,) | 出生值快照 | 分析分层用（v2.4 全 1.0 → stage_b_v24 改按 **peak_tech** 分层） |
 | `known` | (n,n) bool | 全 False | `known[i,j]`=i 知道 j 存在；**永不遗忘** |
 | `observed` | (n,n) bool | 全 False | 精确 tech/res 情报（OBSERVE 所得） |
-| `public` | (n,) bool | 全 False | j 的坐标已对全体公开（自曝或被揭露） |
+| `public` | (n,) bool | 全 False | j 的坐标已对全体公开（自曝或被揭露）；v2.5 入 obs[8]（self_public 自知） |
+| `under_attack` | (n,) bool | 全 False | v2.5：被入侵滑窗旗标（beginTick 先清后设；重选 obs 与下一刻 obs 可见） |
+| `last_invader` | (n,) int | 全 −1 | v2.5：各槽最近入侵者（不入 obs；复用不清——Q18） |
 | `in_domain` / `domain_windup` | (n,) bool | 全 False | 黑域生效 / 已声明下刻生效 |
 | `last_action` | (n,) int | 全 A_SILENT(0) | 上刻**生效后**动作（eff）；obs one-hot 来源 |
 | `first_detect_tick` | (n,n) int | 全 −1 | i 首次得知 j 的刻；广播/揭露**不写**（:435-437） |
@@ -126,15 +150,20 @@ episodes 150、ε 0.05。（train2_v24 同 v2.3 惟目标请求集扩为 4 动�
 初始 n0 = spawn_schedule[0][1] = 4。`pending_reveal` 应用（:435-438）对两种 kind 同式：
 `known[所有存活, j]=True; public[j]=True`——"信号已发出，不在乎发送者/目标存亡"。
 
-## 3. 出生机制（_activate_pending_spawns，:249-275）
+## 3. 出生机制（_activate_pending_spawns，env2_v25.py:309-359）
 
 每刻结算**末尾**调用（resolve 步骤 10），每刻至多 1 个：
 
-1. 队列空 / `free_pool < pending_spawns[0]` / 无空槽（`spawn_tick>10⁸` 最靠前者）→ 不出生。
-2. `spawn_res = pending_spawns.pop(0)`；**立即**预滚下一个 `uniform(5,20)` 入队（队列永不清空）。
-3. **无科技继承（v2.4）**：`tech[slot] = tech_spawn_lo`（恒 1.0）——不抽 RNG、不看存活分布；
-   分层是挣来的（stage_b_v24 按 peak_tech 分层），不是出生的。
-4. `res[slot]=spawn_res`；`free_pool −= spawn_res`；`spawn_tick[slot]=t+1`（下一刻起可行动）；
+1. 队列空 / `free_pool < pending_spawns[0]` → 不出生。
+2. **槽偏好三级（v2.5）**：最靠前未生槽（`spawn_tick>10⁸`）→ 最靠前**已死槽**（复用：
+   社会态全清见 Q11/Q17/Q19；**同刻死者即可复用**）→ 全槽存活 ⇒ `_grow(n+1)`（n 翻倍、
+   新槽白纸、新槽位置一次抽取 `uniform(0,world,m*2)`；Q16）——守恒是唯一刹车。
+3. `spawn_res = pending_spawns.pop(0)`；**立即**预滚下一个 `uniform(5,20)` 入队（队列永不清空；
+   v2.4 槽耗尽早退不消耗 RNG，v2.5 复用/增长分支照常消耗）。
+4. **无科技继承（v2.4 起）**：`tech[slot] = tech_spawn_lo`（恒 1.0）——不抽 RNG、不看存活分布；
+   分层是挣来的（stage_b_v25 按 peak_tech 分层），不是出生的。
+5. `res[slot]=spawn_res`；`free_pool −= spawn_res`；`spawn_tech/spawn_res` 快照；
+   **`peak_tech[slot]=tech[slot]`（v2.5 逐代重置）**；`spawn_tick[slot]=t+1`（下一刻起可行动）；
    `alive[slot]=True`；birth_log 记 `(t+1, slot, spawn_res)`。
 
 初始 4 文明在 t=0 直接 alive（科技恒 1.0、资源 U[5,20] 按预算缩放）。
@@ -247,7 +276,7 @@ obs, valid = env.reset()                         # (n,36) float32 / (n,8) bool
 | 黑域入场 | `− bd_entry_penalty` | −0.5 声明刻瞬时 | 域内再声明无重复罚 |
 | 其余（存活/静默/打击未杀/广播/观测/被发现） | 0 | — | |
 
-### 8.1 四奖励臂（runs/v24_arms/<arm>/config.yaml env 节；游戏 V24_ARMS 同源）
+### 8.1 四奖励臂（runs/v25_arms/<arm>/config.yaml env 节；游戏 V25_ARMS 同源——臂值与 v2.4 相同）
 
 | 臂 | override | 设计意图 |
 |---|---|---|
@@ -260,23 +289,24 @@ obs, valid = env.reset()                         # (n,36) float32 / (n,8) bool
 techTerm/resAtReward/attackCount/bdEnter 原料，在 rewards 计算处顺带记录，**不进 info、
 不参与 parity**）见 docs/game-mechanics.md 与 `src/lib/solo/rewards.ts`。
 
-## 9. 观测向量 36 维精确布局（`_obs`，:305-347；float32）
+## 9. 观测向量 38 维精确布局（`_obs`，env2_v25.py:389-434；float32）
 
-每文明 i：`[ 自身标量 7 | 上刻动作 one-hot 8 | 近邻块 3×7 ]`，死亡行**整行清零**（:346）。
+每文明 i：`[ 自身标量 9 | 上刻动作 one-hot 8 | 近邻块 3×7 ]`，死亡行**整行清零**（:433）。
 
-**自身标量（:314-322）**：
+**自身标量（:398-409）**：
 1. `log1p(max(tech,0)) / log1p(50)`
 2. `max(res,0) / res_max`（掠夺后可 >1）
-3. `(known[i,:] ∧ alive).计数 / (n−1)`（**含 Q2 自知**；只计存活者）
-4. `存活数 / n`
+3. `clip((known[i,:] ∧ alive).计数 / n_norm, 0, 2)`（**含 Q2 自知**；只计存活者；v2.5 固定分母）
+4. `clip(存活数 / n_norm, 0, 2)`
 5. `t / t_max`
 6. `in_domain`；7. `domain_windup`
+8. **`under_attack`**（v2.5 新）；9. **`public[i]` self_public**（v2.5 新——被揭露者/自曝者自知）
 
-**one-hot（:309-310）**：`last_action`（0-7；初始 0=SILENT）。
+**one-hot（:393-394）**：`last_action`（0-7；初始 0=SILENT），索引 9-16。
 
-**近邻块（:324-344，feature-major）**：候选矩阵 `big` = 距离（≤30）否则 ∞；对角 ∞；
+**近邻块（:416-431，feature-major）**：候选矩阵 `big` = 距离（≤30）否则 ∞；对角 ∞；
 非 `known∧alive` 为 ∞（**不滤域内**——域内已知者以真实几何进入）。`order = np.argsort(big)[:, :3]`。
-每槽 7 维（列组拼接：[Δx×3, Δy×3, d×3, tech×3, res×3, public×3, in_domain×3]——索引 15+k/18+k/21+k/24+k/27+k/30+k/33+k）：
+每槽 7 维（列组拼接：[Δx×3, Δy×3, d×3, tech×3, res×3, public×3, in_domain×3]——索引 17+k/20+k/23+k/26+k/29+k/32+k/35+k）：
 1. 环面 Δx/50 × dmask；2. Δy/50 × dmask（wrap：`delta −= world·round(delta/world)`）
 3. d/50（dmask 否则 0）
 4. `log1p(tech)/log1p(50)`，条件 `known_pair ∧ observed[i,·]`，否则 **−1.0**
@@ -287,7 +317,7 @@ techTerm/resAtReward/attackCount/bdEnter 原料，在 rewards 计算处顺带记
 其中 `known_pair = known ∧ alive(目标) ∧ ¬in_domain(目标)`（:329，**距离无关**）；
 `dmask = isfinite(big)`（:332）。**Q13**：候选不足 3 时 ∞ 补位槽的 tech/res/public 取
 argsort 第 k 位文明的旗标——内容与补位者是谁**有关**（远处已公开/已观测者的旗标会泄漏），
-平局序须逐位复刻 numpy（`numpy-sort.ts`）。**不含**自身坐标、自身 public、身份信息。
+平局序须逐位复刻 numpy（`numpy-sort.ts`）。不含自身坐标与身份信息（自身 public 经标量 9 进入）。
 
 ## 10. info 事件流字段字典（:642-653；游戏渲染数据源）
 
@@ -311,7 +341,8 @@ argsort 第 k 位文明的旗标——内容与补位者是谁**有关**（远�
 ## 11. 终止条件（:640-641）
 
 `done = (t ≥ t_max) ∨ ( 全灭 ∧ free_pool < pending_spawns[0] )` ——定长时间是主时钟；唯一提前
-结束是**物理热寂**。没有"最后幸存者获胜"判定：独存活者也要走满 250 刻；玩家目标=活到终局。
+结束是**物理热寂**（v2.5 复用使热寂更罕见但可达）。没有"最后幸存者获胜"判定：独存活者也要
+走满 250 刻；玩家目标=活到终局。
 
 ## 12. RNG 一致性策略
 
@@ -346,3 +377,9 @@ TS 侧 `src/lib/engine/strike-fix.test.ts` 同断言（rigged 掷骰确定化，
 v2.4 补充锚：`experiment/experiment/smoke_v24.py`（动作/obs 形状、300 tick 随机 rollout、揭露
 集成、c 臂奖励公式、无继承）——TS 对应单测见 resolve-b（揭露/显式观测）与 resolve-c（无继承
 出生 + res 津贴）。
+
+**v2.5 回归锚**：`experiment/experiment/smoke_v25.py`（OBS_DIM 38、under_attack 滑窗
+re_obs[0,7]、self_public o[0,8]、300 tick births>36 复用、复用清除断言）与
+`smoke_v25b.py`（v2b 启发式：df 反咬 last_invader、pacifist 藏匿）——TS 对应 env-reuse /
+begin-tick / obs 单测；金标准轨迹（v2.5 重录，2026-11-01）含 trace-main-d（159 次出生重度
+行使复用路径）。

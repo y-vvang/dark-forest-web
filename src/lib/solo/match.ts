@@ -1,12 +1,15 @@
 /**
  * 单机会话状态机（docs/game-mechanics.md §6）。
  *
- * 座位约定：初始 4 席 = 对手光标 0..3（opponentIds[cursor++ % len]）；
- * **玩家 = 出生序 4**（首个内生出生，通常第 1 刻——开局池均值 ~100 ≥ 预滚 ≤20）；
- * 此后每次内生出生继续 cursor++ % len 循环。36 槽一次性（Q11）。
+ * 座位约定（v2.5 随机到达制，用户 2026-11-01）：初始 4 席 = 对手光标 0..3
+ * （opponentIds[cursor++ % len]）；**玩家 = 首个 birth_tick ≥ arrivalTick 的内生
+ * 出生**（arrivalTick 由 seedOf(S,"arrival") 单抽 u 派生 1+floor(u·tMax)——
+ * arrival=1 即旧"首个内生出生"行为；玩家可能在世界任意演化时刻出生，经历刻数
+ * 可 < tMax；世界先终局 → unborn）。到达前的出生按光标循环分配对手。
  *
  * 随机流约定（stage_b 口径，写入种子派生 seedOf）：
  * - env = seedOf(S, "env")
+ * - arrival = seedOf(S, "arrival")（v2.5 新域——到达刻单抽，独立于 env 流）
  * - 全部预设决策（一选/重选/均匀目标）共享 seedOf(S, "session")——stage_b.py:45-61
  *   用一条流（train2 的 per-slot 流以 stage_b 为准）
  * - 每模型实例一条流 seedOf(S, "model:" + arm)（批量 act 同 train2.py:55-64）
@@ -14,7 +17,7 @@
  * 感知过滤不在本层——view.ts 只经 lastResult/env 与自身知识记忆渲染（规格 §7）。
  */
 import { DarkForestEnv2 } from "@/lib/engine/env";
-import { V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
+import { V25_CONFIG, type EnvConfig } from "@/lib/engine/config";
 import { GameRng, seedOf, type Rng } from "@/lib/engine/rng";
 import {
     A_BOTHER,
@@ -26,7 +29,7 @@ import {
     type TickResult,
 } from "@/lib/engine/types";
 import { actBatch, type ModelWeights } from "@/lib/opponents/dqn";
-import { heuristicAction, pickTarget, type PresetKind } from "@/lib/opponents/presets";
+import { heuristicAction, pickTarget, presetStateOf, type PresetKind } from "@/lib/opponents/presets";
 
 export type Phase = "queued" | "awaiting-action" | "awaiting-rechoice" | "ended";
 
@@ -39,10 +42,10 @@ export interface SoloMatchHooks {
     envRng?: Rng;
     presetRng?: Rng;
     modelRng?: (arm: string) => Rng;
+    /** 到达刻 RNG（缺省 GameRng([seedOf(seed,"arrival")])——测试注入口） */
+    arrivalRng?: Rng;
 }
 
-/** 玩家 = 出生序 4（初始 cohort 记序 0-3；birth_log 首个条目即内生序 4） */
-const PLAYER_BIRTH_ORDINAL = 4;
 const EVAL_EPSILON = 0.05; // stage_b 评测口径
 
 export class SoloMatch {
@@ -53,6 +56,8 @@ export class SoloMatch {
 
     phase: Phase = "queued";
     playerSlot: number | null = null;
+    /** 到达刻（1..tMax；玩家 = 首个 birth_tick ≥ 此值的内生出生——用户 2026-11-01） */
+    readonly arrivalTick: number;
 
     private readonly weights: Map<string, ModelWeights>;
     private readonly presetRng: Rng;
@@ -64,13 +69,17 @@ export class SoloMatch {
     private lootByPlayer = 0;
     private pendingRe: Int32Array | null = null;
     private pendingInvader: number | null = null;
+    /** 被入侵刻的本刻原动作（重选视图的"保持原动作"数据源） */
+    private pendingOriginal: { action: number; target: number } | null = null;
+    /** 玩家入席刻快照（v2.5 同刻复用会覆写槽位 spawn_tick——end.ticks 用本值） */
+    private playerSpawnTick = 0;
     private end: EndView | null = null;
 
     constructor(
         seed: number,
         opponentIds: string[],
         weights: Map<string, ModelWeights>,
-        cfg: EnvConfig = V24_CONFIG,
+        cfg: EnvConfig = V25_CONFIG,
         hooks: SoloMatchHooks = {},
     ) {
         if (opponentIds.length === 0) throw new Error("SoloMatch: no opponents selected");
@@ -78,6 +87,11 @@ export class SoloMatch {
         this.weights = weights;
         this.env = new DarkForestEnv2(cfg, hooks.envRng ?? new GameRng([seedOf(seed, "env")]));
         this.presetRng = hooks.presetRng ?? new GameRng([seedOf(seed, "session")]);
+        // 到达刻（用户 2026-11-01 随机到达制）：1 + floor(u·tMax) ∈ [1, tMax]。
+        // arrival=1 ≈ 旧"首个内生出生"行为；晚到达 → 玩家经历刻数 < tMax；
+        // 世界先终局（池枯/热寂）→ unborn（既达路径）。
+        const arrivalRng = hooks.arrivalRng ?? new GameRng([seedOf(seed, "arrival")]);
+        this.arrivalTick = 1 + Math.floor(arrivalRng.uniform() * this.env.cfg.tMax);
         for (const id of opponentIds) {
             if (id === "random" || id === "df" || id === "pacifist") continue;
             const arm = id;
@@ -95,13 +109,23 @@ export class SoloMatch {
             this.seat.set(i, this.opponentIds[this.cursor++ % this.opponentIds.length]);
     }
 
-    /** 排队幽灵期：自动逐刻直至玩家出生或 done（无玩家动作） */
-    start(): void {
-        while (this.phase === "queued" && !this.env.done) this.runTick(null);
+    /** 排队幽灵期：自动逐刻直至玩家出生或 done（无玩家动作）。onQueuedTick：每刻
+     *  resolve 后回调——client 的 tracker.update()（v2.5 多刻排队须逐刻视图更新，
+     *  ViewTracker 契约"每刻至少一次 update"；出生刻的 log.born 亦经此处理） */
+    start(onQueuedTick?: () => void): void {
+        while (this.phase === "queued" && !this.env.done) {
+            this.runTick(null);
+            onQueuedTick?.();
+        }
     }
 
     getPendingInvader(): number | null {
         return this.pendingInvader;
+    }
+
+    /** 被入侵刻的本刻原动作（invasion.originalAction 源；仅 awaiting-rechoice 期非空） */
+    getPendingOriginal(): { action: number; target: number } | null {
+        return this.pendingOriginal;
     }
 
     stats(): { kills: number; loot: number } {
@@ -129,12 +153,15 @@ export class SoloMatch {
     }
 
     /**
-     * 受入侵者重选（awaiting-rechoice）。反咬（6）恒允许（Q9：无需有效目标）；
-     * 其余动作须过合法掩码（BD 的 tech 门由 env valid 给出）。
+     * 受入侵者重选（awaiting-rechoice；用户 2026-11-01 裁定动作格化——任意动作 ∪
+     * 反咬）。反咬（6）恒允许（Q9：无需有效目标）；其余动作须为合法 [0,8) 且过
+     * 合法掩码（两阶段协议目标不可重选——目标动作沿用本刻原目标/最近已知兜底）。
      */
     submitRechoice(action: number): void {
         if (this.phase !== "awaiting-rechoice") throw new Error(`SoloMatch: phase ${this.phase}`);
         if (action !== 6) {
+            if (!Number.isInteger(action) || action < 0 || action >= N_ACTIONS)
+                throw new Error(`SoloMatch: invalid rechoice ${action}`);
             const row = this.validRow(this.playerSlot as number);
             if (!row[action]) throw new Error(`SoloMatch: invalid rechoice ${action}`);
         }
@@ -142,6 +169,7 @@ export class SoloMatch {
         re[this.playerSlot as number] = action;
         this.pendingRe = null;
         this.pendingInvader = null;
+        this.pendingOriginal = null;
         this.finishTick(re);
     }
 
@@ -151,6 +179,7 @@ export class SoloMatch {
         const re = this.pendingRe as Int32Array;
         this.pendingRe = null;
         this.pendingInvader = null;
+        this.pendingOriginal = null;
         this.finishTick(re);
     }
 
@@ -193,6 +222,7 @@ export class SoloMatch {
                     id as PresetKind,
                     valid.subarray(i * N_ACTIONS, (i + 1) * N_ACTIONS),
                     this.presetRng,
+                    presetStateOf(this.env, i),
                 );
             }
         }
@@ -224,7 +254,8 @@ export class SoloMatch {
                 continue;
             }
             const id = this.seat.get(i);
-            if (id === "df") targets[i] = pickTarget("df", cand, env.tech, a, this.presetRng);
+            if (id === "df")
+                targets[i] = pickTarget("df", cand, env.tech, a, this.presetRng, presetStateOf(env, i));
             else if (id !== undefined && isModel(id))
                 targets[i] = this.pickModelTarget(id, cand);
             else targets[i] = this.presetRng.choice(cand); // random 与兜底
@@ -255,6 +286,7 @@ export class SoloMatch {
                         id as PresetKind,
                         reValid.subarray(v * N_ACTIONS, (v + 1) * N_ACTIONS),
                         this.presetRng,
+                        presetStateOf(this.env, v),
                     );
                 }
             }
@@ -262,6 +294,7 @@ export class SoloMatch {
         if (this.playerSlot !== null && invaded.includes(this.playerSlot)) {
             this.pendingRe = re;
             this.pendingInvader = this.env._invaders.get(this.playerSlot) ?? null;
+            this.pendingOriginal = { action: actions[this.playerSlot], target: targets[this.playerSlot] };
             this.phase = "awaiting-rechoice";
             return;
         }
@@ -278,25 +311,34 @@ export class SoloMatch {
         this.lastResult = result;
         this.assignBirths();
 
-        // 玩家自身行为结果（感知过滤规则①：行为者知情权）
+        // 玩家自身行为结果（感知过滤规则①：行为者知情权）。loot_to 长度守卫（评审
+        // I-1）：_grow 扩容刻数组按旧 n 分配——增长槽越界读 undefined → NaN 污染。
         if (this.playerSlot !== null) {
             for (const ev of result.info.strike_events)
                 if (ev[0] === this.playerSlot && ev[2] === "killed") this.killsByPlayer++;
             for (const inv of result.info.invasions)
                 if (inv[0] === this.playerSlot && !inv[2]) this.killsByPlayer++;
-            this.lootByPlayer += result.info.loot_to[this.playerSlot];
+            const loot = result.info.loot_to;
+            this.lootByPlayer += this.playerSlot < loot.length ? loot[this.playerSlot] : 0;
         }
 
-        if (this.playerSlot !== null && !env.alive[this.playerSlot]) {
-            this.phase = "ended";
-            this.end = {
-                kind: "dead",
-                cause: env.death_cause[this.playerSlot],
-                ticks: env.t - env.spawn_tick[this.playerSlot],
-                kills: this.killsByPlayer,
-                loot: this.lootByPlayer,
-            };
-            return;
+        // 判死走 **died_this_tick 事件流**而非 env.alive（走查回归 2026-11-04）：
+        // v2.5 同刻复用为缺省——玩家死亡的同刻其槽位可能即被复用（alive=1 新住客），
+        // alive 判死会漏检 → 游戏不结束、玩家无缝操控新住客。事件流对复用时序免疫
+        //（同在线 processDeaths 口径）；同刻复用会在装配前清死因（Q19）→ unknown。
+        if (this.playerSlot !== null) {
+            const died = result.info.died_this_tick.find((d) => d[0] === this.playerSlot);
+            if (died !== undefined) {
+                this.phase = "ended";
+                this.end = {
+                    kind: "dead",
+                    cause: died[1] === "" ? "unknown" : died[1],
+                    ticks: env.t - this.playerSpawnTick,
+                    kills: this.killsByPlayer,
+                    loot: this.lootByPlayer,
+                };
+                return;
+            }
         }
         if (result.done) {
             this.phase = "ended";
@@ -310,15 +352,18 @@ export class SoloMatch {
     }
 
     /**
-     * 内生出生席位登记：**首个内生出生 = 玩家**（= 初始 4 席之后的出生序 4），
-     * 其余按光标循环分配对手。一次性槽位（Q11）；初始 cohort 在构造器内已登记。
+     * 内生出生席位登记（v2.5 随机到达制，用户 2026-11-01）：**首个 birth_tick ≥
+     * arrivalTick 的内生出生 = 玩家**（arrival=1 ≈ 旧"首个内生出生"行为）；更早
+     * 的出生按光标循环分配对手。玩家可能踏上复用槽（tick 语义不变）；世界先终局
+     *（池枯/热寂）→ unborn。初始 cohort 在构造器内已登记。
      */
     private assignBirths(): void {
         const env = this.env;
         while (this.assignedBirths < env.birth_log.length) {
-            const [, slot] = env.birth_log[this.assignedBirths];
-            if (this.assignedBirths === PLAYER_BIRTH_ORDINAL - 4) {
-                this.playerSlot = slot; // 第一个内生出生
+            const [birthTick, slot] = env.birth_log[this.assignedBirths];
+            if (this.playerSlot === null && birthTick >= this.arrivalTick) {
+                this.playerSlot = slot;
+                this.playerSpawnTick = birthTick; // 入席快照（同刻复用会覆写槽位 spawn_tick）
             } else {
                 this.seat.set(slot, this.opponentIds[this.cursor % this.opponentIds.length]);
                 this.cursor++;

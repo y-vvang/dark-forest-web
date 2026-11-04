@@ -1,13 +1,14 @@
 /**
  * 环境常量配置 IO（用户 2026-10-10 需求：单人开局前可配置——精选参数）。
  *
- * 默认恒为 v2.4 权威 config_v24.yaml；任何改动 = 对实验的**明示偏离**（DESIGN.md
- * 披露条款）。序列化 = 相对 V24_CONFIG 的差集（只存改动字段）；读取端忽略未知键
- * （结构参数 nAgents/world/spawnSchedule 等不可配——模型观测缩放按默认训练）并
+ * 默认恒为 v2.5 权威 config_v25.yaml；任何改动 = 对实验的**明示偏离**（DESIGN.md
+ * 披露条款）。序列化 = 相对 V25_CONFIG 的差集（只存改动字段）；读取端忽略未知键
+ * （结构参数 nAgents/nNorm/world/spawnSchedule 等不可配——模型观测缩放按默认训练；
+ *  nNorm 为 v2.5 obs 归一化固定分母 36.0）并
  * 把越界值钳回字段范围。字段标签 = 参数名 mono 读数（技术记号，非 i18n 文案——
  * 目录 arm id 先例）；分组标题与披露文案走 i18n。
  */
-import { V24_ARMS, V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
+import { V25_ARMS, V25_CONFIG, type EnvConfig } from "@/lib/engine/config";
 
 export interface CfgField {
     /** EnvConfig 数值字段名（mono 标签） */
@@ -61,10 +62,10 @@ export function serializeConfigDiff(cfg: EnvConfig): string {
     const diff: Record<string, number> = {};
     for (const f of CFG_FIELDS) {
         const v = cfg[f.key as keyof EnvConfig] as number;
-        const d = V24_CONFIG[f.key as keyof EnvConfig] as number;
+        const d = V25_CONFIG[f.key as keyof EnvConfig] as number;
         if (v !== d) diff[f.key as string] = v;
     }
-    if (cfg.techSpawnLo !== V24_CONFIG.techSpawnLo || cfg.techSpawnHi !== V24_CONFIG.techSpawnHi) {
+    if (cfg.techSpawnLo !== V25_CONFIG.techSpawnLo || cfg.techSpawnHi !== V25_CONFIG.techSpawnHi) {
         diff[TECH_SPAWN_KEY] = cfg.techSpawnLo; // 单值语义：读取端 lo=hi 同写
     }
     return JSON.stringify(diff);
@@ -75,7 +76,7 @@ export function serializeConfigDiff(cfg: EnvConfig): string {
  * 越界钳制；techSpawn 单键同时写 lo=hi（无继承下二者恒等）。
  */
 export function readEnvConfig(): EnvConfig {
-    const cfg = { ...V24_CONFIG };
+    const cfg = { ...V25_CONFIG };
     let diff: Record<string, unknown> = {};
     try {
         const raw =
@@ -102,9 +103,9 @@ export function readEnvConfig(): EnvConfig {
 export function countDeviations(cfg: EnvConfig): number {
     let n = 0;
     for (const f of CFG_FIELDS)
-        if ((cfg[f.key as keyof EnvConfig] as number) !== (V24_CONFIG[f.key as keyof EnvConfig] as number))
+        if ((cfg[f.key as keyof EnvConfig] as number) !== (V25_CONFIG[f.key as keyof EnvConfig] as number))
             n++;
-    if (cfg.techSpawnLo !== V24_CONFIG.techSpawnLo) n++;
+    if (cfg.techSpawnLo !== V25_CONFIG.techSpawnLo) n++;
     return n;
 }
 
@@ -119,8 +120,8 @@ export const REWARD_KEYS = [
 
 /** 应用某臂的奖励参数：先回默认五元组再覆盖该臂 override（= 该臂训练时的奖励配置；
  * "默认"按钮 = applyArmReward(cfg, "a_classic")——评审修复 2026-10-12：曾漏 deathPenalty） */
-export function applyArmReward(cfg: EnvConfig, arm: keyof typeof V24_ARMS): EnvConfig {
+export function applyArmReward(cfg: EnvConfig, arm: keyof typeof V25_ARMS): EnvConfig {
     const next = { ...cfg };
-    for (const k of REWARD_KEYS) next[k] = V24_CONFIG[k];
-    return { ...next, ...V24_ARMS[arm] };
+    for (const k of REWARD_KEYS) next[k] = V25_CONFIG[k];
+    return { ...next, ...V25_ARMS[arm] };
 }

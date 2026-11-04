@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { V24_CONFIG } from "@/lib/engine/config";
+import { V25_CONFIG } from "@/lib/engine/config";
 import { DarkForestEnv2 } from "@/lib/engine/env";
 import { GameRng } from "@/lib/engine/rng";
 import { makeTrackerHost, viewForSeat, type SeatHost } from "./tracker-host";
 
 function quietEnv(): DarkForestEnv2 {
-    const env = new DarkForestEnv2(V24_CONFIG, new GameRng([7]));
+    const env = new DarkForestEnv2(V25_CONFIG, new GameRng([7]));
     env.reset();
     return env;
 }

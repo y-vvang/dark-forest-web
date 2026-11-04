@@ -8,7 +8,7 @@ import { OpponentCard } from "@/components/opponent-card";
 import { Panel } from "@/components/panel";
 import { BackLink, TopBar } from "@/components/top-bar";
 import { useI18n } from "@/i18n";
-import { V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
+import { V25_CONFIG, type EnvConfig } from "@/lib/engine/config";
 import { OPPONENTS } from "@/lib/opponents/catalog";
 import { serializeConfigDiff } from "@/lib/solo/cfg-io";
 
@@ -21,7 +21,7 @@ import { serializeConfigDiff } from "@/lib/solo/cfg-io";
 export default function SoloPage() {
     const { t } = useI18n();
     const [selected, setSelected] = useState<Set<string>>(() => new Set(["a_classic"]));
-    const [cfg, setCfg] = useState<EnvConfig>({ ...V24_CONFIG });
+    const [cfg, setCfg] = useState<EnvConfig>({ ...V25_CONFIG });
     const toggle = (value: string) => {
         setSelected((prev) => {
             const next = new Set(prev);

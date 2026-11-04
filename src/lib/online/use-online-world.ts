@@ -11,15 +11,16 @@ const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 /**
  * 在线模式客户端会话（计划客户端节）：
  * - **自动入队**：挂载即带 localStorage token 调 POST /queue（"排队即入场"）；
- * - 轮询 = 递归 setTimeout（禁 setInterval）：控制台 2s / 大厅 5s / 入侵模态开 1.5s /
- *   终局遮罩期 5s；`document.hidden` 暂停，回前台立即补一发；
+ * - 轮询 = 递归 setTimeout（禁 setInterval）：控制台 2s / 大厅 5s / 入侵重选窗口
+ *   1.5s（截止读数新鲜度）/ 终局遮罩期 5s；`document.hidden` 暂停，回前台立即补一发；
  * - **日志条数游标**：`since` = 客户端累计数（出生锚定后）；每响应增量合并，
  *   数组每次新建（React Compiler 的 EventLog memo 契约）；
  * - 404 unknown-token：缓存态有终局 → **保留终局遮罩等手动"再排一次"**
  *   （旧世界已滚动删除）；否则自动重排（剪除/滚动）；
  * - 提交响应不带日志增量（协议约定）——事件由下一次轮询送达；stale-tick 静默
- *   （立即轮询追平）；连续失败 ≥2 显示 offline 横幅（数据保持旧态）；
- * - 入侵倒计时按 (tick, invader) 键冻结——防每 1.5s 轮询重启 CSS 倒计时条。
+ *   （立即轮询追平）；连续失败 ≥2 显示 offline 横幅（数据保持旧态）。
+ * - v2.5 重选模式（2026-11-01 模态退役）：被入侵且未提交重选时动作格进入重选
+ *   模式（ConsoleView.rechoice 为退出判据）；窗口计时 = 控制台既有刻读数。
  */
 export interface LastAction {
     action: number;
@@ -63,12 +64,10 @@ export interface OnlineSession {
     /** 客户端累计日志（渲染用——响应内 view.log 仅为增量） */
     log: LogEntryView[];
     offline: boolean;
-    /** 入侵倒计时（首次见到该 (tick, invader) 时的当刻剩余秒） */
-    invasionLeft: number;
     /** 最近一次成功提交的动作（回车 = 重复上刻；新世界重置） */
     lastAction: LastAction | null;
     submitAction: (action: number, target: number) => void;
-    /** 5=黑域 | 6=反咬 | -1=明确保持原动作（协议兼容；页面模态"取消"已改本地关闭） */
+    /** 任意合法动作 [0,8)（6=反咬）| -1=明确保持原动作（协议兼容） */
     submitRechoice: (action: number) => void;
     /** 离开排队（仅产前；页面自行导航走） */
     leave: () => Promise<void>;
@@ -80,14 +79,12 @@ export function useOnlineWorld(): OnlineSession {
     const [state, setState] = useState<StateResponse | null>(null);
     const [log, setLog] = useState<LogEntryView[]>([]);
     const [offline, setOffline] = useState(false);
-    const [invasionLeft, setInvasionLeft] = useState(0);
     const [lastAction, setLastAction] = useState<LastAction | null>(null);
 
     const stateRef = useRef<StateResponse | null>(null);
     const tokenRef = useRef<string | null>(null);
     const cursorRef = useRef(0);
     const failuresRef = useRef(0);
-    const invasionKeyRef = useRef("");
     const detachedRef = useRef(false); // 旧世界已删 + 终局遮罩在手：停请求等手动重排
 
     const apply = useCallback((resp: StateResponse) => {
@@ -97,14 +94,6 @@ export function useOnlineWorld(): OnlineSession {
                 cursorRef.current = next.length;
                 return next;
             });
-            const inv = resp.view.invasion;
-            if (inv !== null) {
-                const key = `${resp.timing.tick}-${inv.invaderId}`;
-                if (invasionKeyRef.current !== key) {
-                    invasionKeyRef.current = key;
-                    setInvasionLeft(Math.max(0, resp.timing.remainingSeconds));
-                }
-            }
         }
         stateRef.current = resp;
         setState(resp);
@@ -135,7 +124,6 @@ export function useOnlineWorld(): OnlineSession {
             setLastAction(null);
             cursorRef.current = 0;
             setLog([]);
-            invasionKeyRef.current = "";
             apply(q.state); // join 响应 = 出生锚定全量日志（since=0 语义）
         } catch {
             fail();
@@ -282,7 +270,6 @@ export function useOnlineWorld(): OnlineSession {
         state,
         log,
         offline,
-        invasionLeft,
         lastAction,
         submitAction,
         submitRechoice,

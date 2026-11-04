@@ -111,16 +111,6 @@ body {
     }
 }
 
-@keyframes countdown {
-    from {
-        inline-size: 100%;
-    }
-
-    to {
-        inline-size: 0%;
-    }
-}
-
 .anim-ping {
     animation: ping var(--dur-ping) linear forwards;
 }
@@ -135,11 +125,6 @@ body {
 
 .anim-seal {
     animation: seal var(--dur-med) ease-out;
-}
-
-/* online-only: invasion counter window = remaining tick time (DESIGN.md §13) */
-.anim-countdown {
-    animation: countdown var(--dur-counter, 20s) linear forwards;
 }
 
 /* --------------------------------------------------------------- effects

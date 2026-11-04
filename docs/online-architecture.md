@@ -12,13 +12,13 @@ DESIGN.md §10.11/§10.11a/§13。本文是**在线模式的机制文档**——
 - **单例共享世界**：全局指针键 `df:online:idx` → 当前世界。无世界时首位排队者
   播种；t≥250 或热寂 → `ended`；下一位 join 者 / 仍在队的 token 轮询 → 滚动
   播种新世界（旧队列未入座者携入，旧记录删除）。
-- **四臂轮替**：初始 4 席 = a/b/c/d 各一；此后未被玩家占据的内生出生按
-  a→b→c→d 循环（ε=0.05 stage_b 口径，与单人对手同流约定 seedOf(S,"model:"+arm)）。
-- **槽复用（对实验的明示偏离，用户 2026-10-14"取消 36 上限"）**：36 未生槽耗尽后取
-  最靠前已死槽重生（`cfg.slotReuse`——仅 `ONLINE_ENV_CONFIG` 开启；缺省世界保 env2_v24
-  硬上限，金标准轨迹实证暴力世界会耗尽 36 槽，缺省开启即破坏奇偶）。复用 = 恒星位置
-  不动 + 零额外 RNG + 该槽认知态全清（含 pending_reveal/counter 引用条目）；感知层
-  ⑥ 死者缓存随弃（复用后重探测产生全新 contact）。
+- **AI 居民轮替（v2.5 五席）**：初始 4 席 = a/b/c/d 各一；此后未被玩家占据的内生出生按
+  a→b→c→d→champion 循环（champion 尾部追加保初始 4 席索引稳定，用户 2026-11-01；
+  ε=0.05 stage_b 口径，与单人对手同流约定 seedOf(S,"model:"+arm)）。
+- **槽复用（v2.5 缺省行为，原偏离条款已消解）**：env2_v25 三级出生偏好——未生槽 →
+  死槽复用（**同刻死者即可复用**，社会态全清）→ `_grow` 扩容；守恒是唯一刹车
+  （用户 2026-10-14"取消 36 上限"由实验采纳为正式机制，2026-11-01 消解 `slotReuse`）。
+  感知层 ⑥ 死者缓存随弃（复用后重探测产生全新 contact）。
 - **玩家占位**：排队 FIFO——每次内生出生弹队首；未弹出的留在队。
 
 ## 1. 时序模型（tick-in-flight；DESIGN.md §13 的实现语义）
@@ -108,11 +108,15 @@ interface TickEntry {                // 窗口条目
 - `DELETE /api/online/queue?token=` → 离队（仅产前；已入座 no-op）。
 - `GET /api/online/state?token=&since=` → `lobby-public`（无 token）| `lobby`
   （位次+世界读数+worldEnded）| `console`（过滤视图 + **日志增量** + submission +
+  **rechoice（本窗口已提交的本刻重选，null = 未重选——客户端重选模式的退出判据）** +
   `Timing{serverNowMs, tickEndsAtMs, remainingSeconds, tick, worldVersion}`）。
 - `POST /api/online/action {token, tick, action, target}` / `POST …/rechoice
-  {token, tick, action: 5|6|-1}`——`tick` = 防陈旧窗口号（错 ⇒ 409 stale-tick）；
-  校验尽力而为（动作/目标/BD 门），**env stageSanitize 为最终权威**；提交响应
-  不带日志增量（事件由下一次轮询送达）。
+  {token, tick, action}`——`tick` = 防陈旧窗口号（错 ⇒ 409 stale-tick）；**重选
+  action = 任意合法 [0,8)（6=反咬无需目标）或 -1 = 明确保持原动作**（v2.5 放宽，
+  用户 2026-11-01 动作格反咬项；目标不可重选——目标动作沿用本刻原目标）；校验尽力
+  而为（动作/目标/合法行），**env stageSanitize 为最终权威**；提交响应不带日志增量
+  （事件由下一次轮询送达）。**死 token 拒收**（not-born——v2.5 槽位可被新住客复用，
+  `alive[slot]=1` 不再证明原 token 活着，以运行时终局为准）。
 
 **感知过滤服务端化**：`solo/view.ts`（纯 TS）经 `tracker-host.ts` 单点适配
 （as unknown as SoloMatch 收口一处，solo 层零改动）在服务端为每席跑
@@ -136,10 +140,15 @@ ViewTracker——客户端只拿各自过滤视图（防作弊）。每 resolve 
   连接池耗尽 ERR_INSUFFICIENT_RESOURCES、服务端 lock busy 503 刷屏；本地产线
   皆中招）。失败不重试：刻照常到点结算（未提交=静默），下一窗重新武装。
   服务端锁竞争超限语义化为 **503 `server-busy`**（裸 500 与真缺陷不可辨）。
+  **v2.5 canAct 放宽**：重选已提交（`ConsoleView.rechoice ≠ null`）→ 当窗恢复
+  下一刻提交通道，安全网随之武装（被入侵者亦可获姿态自动续交）。
 - **每命一新 token**：死席 join 由服务端换发新 token 再排队（旧 token 留在旧世界档案，
   重演安全）；多次进出世界 = 每次重新排队（用户 2026-10-14）。
-- 入侵倒计时按 `(tick, invader)` 键冻结——防 1.5s 轮询重启 CSS 倒计时条；
-  模态"取消" = 本地关闭（截止保原即环境语义；-1 协议保留兼容）。
+- **被入侵重选 = 动作格重选模式**（2026-11-01 v2.5，警报模态退役）：被入侵且未提交
+  重选（`ConsoleView.rechoice === null`）时动作格整体切换为重选界面（任意动作 ∪ 反咬
+  直提、目标不选靶、显式保持原动作；DESIGN §10.7）；窗口计时 = 控制台既有刻读数
+  （无独立倒计时条）；星图入侵者标记常显 lethal 环 + 警报光。提交后退出重选模式、
+  恢复下一刻提交通道；到刻 = 最后提交（缺席/保持 = 原动作——环境语义）。
 
 ## 6. 已接受的边界（明示取舍）
 
@@ -149,17 +158,24 @@ ViewTracker——客户端只拿各自过滤视图（防作弊）。每 resolve 
 被出生（FIFO 正确行为）；"仍在队的活跃 token 由其轮询触发滚动"路径与 join 共用
 spawn(carried)，服务级确定性构造不可得，以 join 路径覆盖；E2E 必须从干净世界
 起跑并模拟真实心跳（两轮"失败"皆为正确语义：剪除与全员谓词）。
+**v2.5 部署注记**：引擎（38 维 obs/复用/扩容）+ 模型（v2.5 权重）+ 轮替（五席）
+任一升级都会使在飞世界的重演漂移——旧世界对该版本"砖化"，靠 ≤~83min 的世界
+寿命自愈滚动（dev 可 `bun run purge:online`）；同刻复用的驱动加固见 §7 模块注。
 
 ## 7. 模块地图与测试
 
 `src/lib/online/`：config / types / record（纯记录操作）/ ai（服务端权重单例，
-构建期内联 public/models/*.json）/ tracker-host / driver（重演+窗口机器：
-settleCurrent、fastForwardDue、ensureRuntime）/ hub（实例缓存+锁）/ store
-（接口+getStore）/ memory-store / upstash-store / http（解析+错误映射）/
-service（编排）/ server（单例装配）/ use-online-world（客户端 hook）；
+构建期内联 public/models/*.json——v2.5 起五模型含 champion）/ tracker-host /
+driver（重演+窗口机器：settleCurrent、sprintDue、ensureRuntime、**syncGrowth**
+——v2.5 `_grow` 后 seatArm/stash 同步、新槽 SILENT；**processDeaths 先于
+assignBirths**——同刻复用防幻影判死；SeatRuntime.spawnTick 入席快照——
+end.ticks 对复用覆写免疫）/ hub（实例缓存+锁）/ store（接口+getStore）/
+memory-store / upstash-store / http（解析+错误映射）/ service（编排）/
+server（单例装配）/ use-online-world（客户端 hook）；
 `src/app/api/online/{queue,state,action,rechoice}/route.ts`（薄处理器）。
 
-测试（bun，共 53 用例：record 8 + memory-store 8 + http 5 + ai 1 +
-tracker-host 2 + driver 11 + window 6 + service 12）——伪时钟 + ScriptedRng +
-MemoryStore 注入，零网络零墙钟；UpstashStore 与路由按计划走真实实例手动
-走查（M4 门 + M5 双人 E2E 已记录于台账）。契约：MemoryStore 单测钉住接口语义。
+测试（bun，在线层 66 用例：record 8 + memory-store 9 + http 6 + ai 1 +
+tracker-host 2 + driver 14 + window 6 + service 16 + safety-net 4）——伪时钟 +
+ScriptedRng + MemoryStore 注入，零网络零墙钟；UpstashStore 与路由按计划走真实
+实例手动走查（M4 门 + M5 双人 E2E 已记录于台账）。契约：MemoryStore 单测钉住
+接口语义。

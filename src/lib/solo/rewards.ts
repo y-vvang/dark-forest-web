@@ -1,22 +1,22 @@
 /**
  * 奖励组合（游戏层）：把引擎的逐刻奖励原料（TickResult.rewardDetail——TS-only 诊断）
- * 组合成任意参数集的奖励流——①当前开局配置（cfg 注入）②v2.4 四奖励臂（固定参数，
- * runs/v24_arms/<arm>/config.yaml，经 V24_ARMS 引用不重复抄数）。
+ * 组合成任意参数集的奖励流——①当前开局配置（cfg 注入）②v2.5 四奖励臂（固定参数，
+ * runs/v25_arms/<arm>/config.yaml，经 V25_ARMS 引用不重复抄数）。
  *
  * 口径（用户 2026-10-10 确认）：match 页展示 = 配置流 + 四臂对比；
  * 配置界面披露"奖励参数不影响对手模型行为"（模型为冻结策略）。
  */
-import { V24_ARMS, V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
+import { V25_ARMS, V25_CONFIG, type EnvConfig } from "@/lib/engine/config";
 import type { RewardDetail } from "@/lib/engine/types";
 
 /** v2.4 四奖励臂 id（展示序 = 目录序） */
 export const ARM_IDS = ["a_classic", "b_terminal", "c_res", "d_malintent"] as const;
 
-/** 臂的完整 env 参数（V24_CONFIG + 该臂 override） */
+/** 臂的完整 env 参数（V25_CONFIG + 该臂 override） */
 export function armParamsOf(id: string): EnvConfig {
-    const o = V24_ARMS[id];
+    const o = V25_ARMS[id];
     if (o === undefined) throw new Error(`rewards: unknown arm ${id}`);
-    return { ...V24_CONFIG, ...o };
+    return { ...V25_CONFIG, ...o };
 }
 
 /** 单刻/累计的奖励原料（自 rewardDetail 提取；death 自 deadNow） */
@@ -37,13 +37,16 @@ export function emptyIngredients(): RewardIngredients {
     return { techTerm: 0, resAtReward: 0, attackCount: 0, bdEnter: 0, death: 0 };
 }
 
-/** 从某刻 rewardDetail（+deadNow）为槽位 p 提取原料，累加进 ing */
+/** 从某刻 rewardDetail（+deadNow）为槽位 p 提取原料，累加进 ing。
+ *  长度守卫（评审 I-1）：_grow 扩容刻的 resolve 数组按旧 n 分配（python 同构），
+ *  增长槽（旧 n 起的 index）越界读 undefined → NaN 永久污染——该刻无原料即返回。 */
 export function addIngredients(
     ing: RewardIngredients,
     detail: RewardDetail,
     deadNow: Uint8Array,
     p: number,
 ): void {
+    if (p >= detail.techTerm.length) return;
     ing.techTerm += detail.techTerm[p];
     ing.resAtReward += detail.resAtReward[p];
     ing.attackCount += detail.attackCount[p];

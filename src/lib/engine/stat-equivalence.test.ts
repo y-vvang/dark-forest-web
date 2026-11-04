@@ -8,28 +8,28 @@
  */
 import { expect, test } from "bun:test";
 
-import { V24_CONFIG } from "./config";
+import { V25_CONFIG } from "./config";
 import { DarkForestEnv2 } from "./env";
 import { GameRng, seedOf } from "./rng";
 import { assertConservation } from "./snapshot";
 import { loadStats } from "./testdata-io";
-import { heuristicAction, pickTarget, type PresetKind } from "@/lib/opponents/presets";
+import { heuristicAction, pickTarget, presetStateOf, type PresetKind } from "@/lib/opponents/presets";
 import { A_BOTHER, A_INVADE, A_OBSERVE, A_STRIKE } from "@/lib/engine/types";
 
 const N = 10;
-const TARGET_ACTIONS: number[] = [A_INVADE, A_STRIKE, A_BOTHER, A_OBSERVE]; // v2.4 目标请求集
+const TARGET_ACTIONS: number[] = [A_INVADE, A_STRIKE, A_BOTHER, A_OBSERVE]; // 目标请求集
 
-test("stat equivalence: TS env vs python reference aggregates (presets-only pool)", () => {
+test("stat equivalence: TS env vs python reference aggregates (v2b presets pool)", () => {
     const stats = loadStats();
-    const n = V24_CONFIG.nAgents;
-    const tMax = V24_CONFIG.tMax;
+    const n = V25_CONFIG.nAgents;
+    const tMax = V25_CONFIG.tMax;
     let aliveTicksTotal = 0;
     let killsTotal = 0;
-    const actCounts = new Float64Array(8); // v2.4：N_ACTIONS 8
+    const actCounts = new Float64Array(8); // N_ACTIONS 8
 
     for (let ep = 0; ep < N; ep++) {
         const seed = 51001 + ep;
-        const env = new DarkForestEnv2(V24_CONFIG, new GameRng([seedOf(seed, "env")]));
+        const env = new DarkForestEnv2(V25_CONFIG, new GameRng([seedOf(seed, "env")]));
         env.reset();
         const session = new GameRng([seedOf(seed, "session")]); // 预制决策共享流（stage_b 口径）
         const kinds: PresetKind[] = [];
@@ -45,6 +45,7 @@ test("stat equivalence: TS env vs python reference aggregates (presets-only pool
                         kinds[i],
                         valid.subarray(i * 8, (i + 1) * 8),
                         session,
+                        presetStateOf(env, i),
                     );
                 }
             }
@@ -55,16 +56,29 @@ test("stat equivalence: TS env vs python reference aggregates (presets-only pool
                 const cand: number[] = [];
                 for (let j = 0; j < n; j++) if (tmask[i * n + j]) cand.push(j);
                 if (cand.length > 0)
-                    targets[i] = pickTarget(kinds[i] === "df" ? "df" : "random", cand, env.tech, actions[i], session);
+                    targets[i] = pickTarget(
+                        kinds[i] === "df" ? "df" : "random",
+                        cand,
+                        env.tech,
+                        actions[i],
+                        session,
+                        presetStateOf(env, i),
+                    );
             }
             const invaded = env.beginTick(actions, targets);
             const re = Int32Array.from(actions);
+            const reValid = env.valid(); // 重选用新鲜掩码（录制器 stats 循环 env._valid() 同口径）
             for (const v of invaded) {
-                re[v] = heuristicAction(kinds[v], valid.subarray(v * 8, (v + 1) * 8), session);
+                re[v] = heuristicAction(
+                    kinds[v],
+                    reValid.subarray(v * 8, (v + 1) * 8),
+                    session,
+                    presetStateOf(env, v),
+                );
             }
             const r = env.resolve(re);
             for (let i = 0; i < n; i++) if (env.alive[i]) aliveTicksTotal++;
-            for (let i = 0; i < n; i++) if (env.alive[i]) actCounts[re[i]]++;
+            for (let i = 0; i < n; i++) if (env.alive[i]) actCounts[re[i]]++; // bincount(re[alive])——仅存活槽（录制器 stats 循环口径）
             for (const s of r.info.strikes) if (s[2]) killsTotal++;
             assertConservation(env);
             done = r.done;

@@ -1,19 +1,33 @@
 /**
- * DarkForestEnv2 —— v2.4 的忠实 TS 移植。
+ * DarkForestEnv2 —— v2.5 的忠实 TS 移植。
  *
- * 权威源：experiment/experiment/env2_v24.py（654 行）。字段名/方法集与其一一对应
- * （_obs→obs()、_valid→valid()、_pair_dist→pairDist）；quirk 清单见
- * docs/env-model-v23.md §0（Q1-Q13），全部照抄。
+ * 权威源：experiment/experiment/env2_v25.py（748 行）。字段名/方法集与其一一对应
+ * （_obs→obs()、_valid→valid()、_pair_dist→pairDist、_grow→_grow()）；quirk 清单见
+ * docs/env-model-v23.md §0（Q1-Q16），全部照抄。
  *
- * v2.4 vs v2.3-fix：BROADCAST_SELF→BROADCAST_ALL（改名）；BROADCAST_OTHER 恢复为
- * 「揭露 known 目标」；删 STRIKE_WEAK/STRONG；OBSERVE 显式选目标；出生无科技继承
+ * v2.5 vs v2.4（diff 仅 104 插入/10 删除；resolve 主体逐字节相同）：
+ * - OBS_DIM 36→38：9 标量（+[7] under_attack、[8] self_public）；归一化固定分母
+ *   n_norm（cfg.nNorm）+ clip[0,2]（v2.4 为 /(n-1) 与 /n）。
+ * - 新 env 态：under_attack（beginTick 先清后设的滑窗——重选 obs 与下一刻 obs 可见）、
+ *   last_invader（不入 obs；v2b 启发式用；**复用不清除**——复生者可反咬前任入侵者）。
+ * - 出生三级偏好：unborn 槽 → 死槽复用（社会态全清，**同刻死者即可复用**；不滤
+ *   pending_reveal——"死者被揭露→复生者出生即 public"穿越 quirk 照抄）→ _grow 扩容
+ *   （n 翻倍、新槽白纸、位置单抽；上游 last_action 覆盖 bug 见 Q16 修复）。
+ * - 每次出生 peak_tech[slot] = 出生科技（逐代峰值重置，env2_v25.py:356）。
+ * - 终局不变：t_max 或热寂（复用使热寂更罕见但可达）。
+ *
+ * v2.4 要点保留：BROADCAST_ALL / BOTHER（揭露）；OBSERVE 显式目标；出生无科技继承
  * （恒 tech_spawn_lo，每出生少 1 个 RNG 值）；奖励臂参数 res_reward_scale/attack_reward。
  *
  * 与 python 的既定差异（见 docs/game-mechanics.md §2/§3）：
  * - 随机数经构造期注入（Rng 接口 = uniform/choice 两法）；reset() 无 seed 参数。
  * - numpy 向量化 → 显式循环（36 槽规模无关紧要）。
- * - obs/valid 平铺行主序：obs[i*36+k]、valid[i*8+a]。
+ * - obs/valid 平铺行主序：obs[i*OBS_DIM+k]、valid[i*8+a]。
  * - TickResult.rewardDetail：TS-only 奖励诊断（游戏层扩展，非 parity——录制端无此字段）。
+ * - **Q16（明示偏离）**：python resolve 尾部 `self.last_action = eff`（env2_v25.py:728）
+ *   在 _grow 扩容后用旧长数组覆盖补齐数组（下刻 _obs 形状崩溃）；TS 照增长语义修复
+ *   （eff 拷入新长度数组、新槽保持 A_SILENT）。增长路径实验从未触发（probe：max_alive
+ *   9-12），游戏配置面板可调大预算故须正确处理。
  */
 import type { EnvConfig } from "./config";
 import { numpyArgsort } from "./numpy-sort";
@@ -61,8 +75,11 @@ interface TickCtx {
 
 export class DarkForestEnv2 {
     // ---- config（env2.py:115-151 的 self.* 参数镜像）----
-    readonly n: number;
+    /** 槽数（v2.5 起 _grow 可变；reset 不还原 n——python 同构，游戏每局新 env） */
+    n: number;
     readonly cfg: EnvConfig;
+    /** v2.5 obs 归一化固定分母（env2_v25 ctor 第 2 位置参数；yaml 无此键=36.0） */
+    private readonly n_norm: number;
     private readonly world: number;
     private readonly detect_radius: number;
     private readonly t_max: number;
@@ -109,9 +126,13 @@ export class DarkForestEnv2 {
     known: Uint8Array; // n*n
     observed: Uint8Array; // n*n
     public_: Uint8Array; // `public` 是 TS 保留字
+    /** v2.5 滑窗：被入侵旗标（beginTick 先清后设；重选 obs 与下一刻 obs 可见） */
+    under_attack: Uint8Array;
+    /** v2.5：各槽最近入侵者（−1 = 无；不入 obs；**复用不清除**——照抄） */
+    last_invader: Int32Array;
     in_domain: Uint8Array;
     domain_windup: Uint8Array;
-    pending_reveal: ["self" | "other", number][]; // env2_v24.py 的 (kind, j)——v2.4 增 "other" 揭露
+    pending_reveal: ["self" | "other", number][]; // env2_v25.py 的 (kind, j)——v2.4 增 "other" 揭露
     pending_counter: number[];
     last_action: Int32Array;
     first_detect_tick: Int32Array; // n*n，初始 -1
@@ -136,6 +157,7 @@ export class DarkForestEnv2 {
     constructor(cfg: EnvConfig, rng: Rng) {
         this.cfg = cfg;
         this.n = cfg.nAgents;
+        this.n_norm = cfg.nNorm;
         this.world = cfg.world;
         this.detect_radius = cfg.detectRadius;
         this.t_max = cfg.tMax;
@@ -182,6 +204,8 @@ export class DarkForestEnv2 {
         this.known = new Uint8Array(n * n);
         this.observed = new Uint8Array(n * n);
         this.public_ = new Uint8Array(n);
+        this.under_attack = new Uint8Array(n);
+        this.last_invader = new Int32Array(n).fill(-1);
         this.in_domain = new Uint8Array(n);
         this.domain_windup = new Uint8Array(n);
         this.pending_reveal = [];
@@ -273,6 +297,8 @@ export class DarkForestEnv2 {
         this.known = new Uint8Array(n * n);
         this.observed = new Uint8Array(n * n);
         this.public_ = new Uint8Array(n);
+        this.under_attack = new Uint8Array(n);
+        this.last_invader = new Int32Array(n).fill(-1);
         this.in_domain = new Uint8Array(n);
         this.domain_windup = new Uint8Array(n);
         this.pending_reveal = [];
@@ -289,8 +315,10 @@ export class DarkForestEnv2 {
 
     // ------------------------------------------------------------------- obs
     /**
-     * 36 维观测（env2_v24.py:305-347）：7 标量 + 8 上刻动作 one-hot + 3 个最近已知
-     * 存活非域文明 × 7。死亡/未生行整行清零。crowd（env2_v24.py:308）为死代码，不移植。
+     * 38 维观测（env2_v25.py:389-434）：9 标量 + 8 上刻动作 one-hot + 3 个最近已知
+     * 存活非域文明 × 7。死亡/未生行整行清零。crowd（env2_v25.py:392）为死代码，不移植。
+     * v2.5：[2]/[3] 除以固定 n_norm 并 clip[0,2]（v2.4 为 /(n-1) 与 /n）；新标量
+     * [7] under_attack、[8] self_public；one-hot 与近邻块整体 +2 移位。
      * 近邻排序用稳定排序——被掩蔽行输出恒为零向量，平手序差异无害（规格 §3.3）。
      */
     obs(): Float32Array {
@@ -309,12 +337,14 @@ export class DarkForestEnv2 {
             for (let j = 0; j < n; j++) {
                 if (this.known[i * n + j] && this.alive[j]) knownAlive++; // 含 known[i,i]（Q2）
             }
-            out[base + 2] = Math.fround(knownAlive / (n - 1));
-            out[base + 3] = Math.fround(aliveCount / n);
+            out[base + 2] = Math.fround(Math.min(2, Math.max(0, knownAlive / this.n_norm)));
+            out[base + 3] = Math.fround(Math.min(2, Math.max(0, aliveCount / this.n_norm)));
             out[base + 4] = Math.fround(this.t / this.t_max);
             out[base + 5] = this.in_domain[i];
             out[base + 6] = this.domain_windup[i];
-            out[base + 7 + this.last_action[i]] = 1; // one-hot
+            out[base + 7] = this.under_attack[i]; // v2.5 self state
+            out[base + 8] = this.public_[i]; // v2.5 self_public
+            out[base + 9 + this.last_action[i]] = 1; // one-hot
             // big 行（env2_v24.py:324-326）：known & alive & 距离 ≤ 半径 → 真实距离，
             // 否则 inf（对角恒 inf；【不滤域内者】——域内目标以真实几何进入）。
             const big = new Float64Array(n).fill(Infinity);
@@ -332,7 +362,7 @@ export class DarkForestEnv2 {
             // known_pair/observed 旗标（距离无关）——伪影但为权威行为（numpy-sort.ts）。
             const order = numpyArgsort(big);
             // 近邻块为 feature-major（np.concatenate(axis=-1) 拼各 (n,NEAR_K) 列组）：
-            // [15+k]=Δx [18+k]=Δy [21+k]=d [24+k]=tech [27+k]=res [30+k]=public [33+k]=in_domain
+            // [17+k]=Δx [20+k]=Δy [23+k]=d [26+k]=tech [29+k]=res [32+k]=public [35+k]=in_domain
             for (let k = 0; k < NEAR_K; k++) {
                 const j = order[k];
                 const dmask = Number.isFinite(big[j]); // 几何特征门（掩码行 Δx/Δy/d = 0）
@@ -354,14 +384,14 @@ export class DarkForestEnv2 {
                 const hasIntel = knownPair && this.observed[i * n + j] === 1;
                 const nearTech = hasIntel ? this.tech[j] : -1;
                 const nearRes = hasIntel ? this.res[j] : -1;
-                out[base + 15 + k] = Math.fround(dx / 50);
-                out[base + 18 + k] = Math.fround(dy / 50);
-                out[base + 21 + k] = Math.fround(d / 50);
-                out[base + 24 + k] =
+                out[base + 17 + k] = Math.fround(dx / 50);
+                out[base + 20 + k] = Math.fround(dy / 50);
+                out[base + 23 + k] = Math.fround(d / 50);
+                out[base + 26 + k] =
                     nearTech >= 0 ? Math.fround(Math.log1p(Math.max(nearTech, 0)) / LOG_REF) : -1;
-                out[base + 27 + k] = Math.fround(nearRes / this.res_max);
-                out[base + 30 + k] = knownPair && this.public_[j] === 1 ? 1 : 0;
-                out[base + 33 + k] = 0; // Q3：in_domain 特征恒 0（×known_pair 含 ~in_domain）
+                out[base + 29 + k] = Math.fround(nearRes / this.res_max);
+                out[base + 32 + k] = knownPair && this.public_[j] === 1 ? 1 : 0;
+                out[base + 35 + k] = 0; // Q3：in_domain 特征恒 0（×known_pair 含 ~in_domain）
             }
         }
         return out;
@@ -444,6 +474,9 @@ export class DarkForestEnv2 {
      */
     beginTick(actions: Int32Array, targets: Int32Array | null): number[] {
         const n = this.n;
+        // v2.5 滑窗（env2_v25.py:448-450）：上一刻的 under_attack 旗标此时已被看见
+        // （重选 obs + 下一刻 obs）——先清，再施加本刻入侵通知。
+        this.under_attack.fill(0);
         this._actions = Int32Array.from(actions);
         this._targets = new Map();
         if (targets !== null) {
@@ -460,12 +493,15 @@ export class DarkForestEnv2 {
                 if (j >= 0 && mask[i * n + j] === 1) this._targets.set(i, j);
             }
         }
-        // 入侵通知：受害者【当场】发现入侵者（env2.py:353-359）
+        // 入侵通知：受害者【当场】发现入侵者并自知被入侵（env2_v25.py:459-469——
+        // under_attack/last_invader 随通知置位，beginTick 后生成的重选 obs 立即可见）
         this._invaders = new Map();
         for (const [i, j] of this._targets) {
             if (this._actions[i] === A_INVADE && this.alive[i] === 1 && this.alive[j] === 1) {
                 this.known[j * n + i] = 1;
                 this.first_detect_tick[j * n + i] = this.t;
+                this.under_attack[j] = 1;
+                this.last_invader[j] = i;
                 this._invaders.set(j, i);
             }
         }
@@ -523,7 +559,12 @@ export class DarkForestEnv2 {
         this.stageRewards(ctx); // 9   Task 9
         this.stageBirths(ctx); // 10  Task 9
 
-        this.last_action = Int32Array.from(ctx.eff); // env2.py:608
+        // env2_v25.py:728 `self.last_action = eff`——**Q16（明示偏离）**：python 此处在
+        // _grow 扩容后用旧长 eff 覆盖补齐数组（下刻 _obs 形状崩溃）；TS 照增长语义
+        // 修复：按当前 n 分配，旧 eff 拷入前段，新槽保持 _grow 补的 A_SILENT。
+        const la = new Int32Array(this.n).fill(A_SILENT);
+        la.set(ctx.eff.subarray(0, Math.min(ctx.eff.length, this.n)));
+        this.last_action = la;
         // died_this_tick 装配（env2.py:619）：deadNow 升序 × 当刻死因
         ctx.diedThisTick = [];
         for (let v = 0; v < n; v++) {
@@ -958,25 +999,21 @@ export class DarkForestEnv2 {
         }
     }
 
-    /** 阶段 10：内生出生（env2.py:224-254 调用点 :606） */
-    private stageBirths(ctx: TickCtx): void {
-        this.activatePendingSpawns(ctx.deadNow);
+    /** 阶段 10：内生出生（env2_v25.py:726 调用点） */
+    private stageBirths(_ctx: TickCtx): void {
+        this.activatePendingSpawns();
     }
 
     /**
-     * v2.4 无界内生出生（env2_v24.py:249-275）：恒恰一个预滚额；池攒够即生
-     * （每刻至多 1 个、最靠前空槽）。**无科技继承**：出生科技恒 tech_spawn_lo
-     * （config 钉 lo=hi=1.0——同起跑线；v2.3 的 P25–P75 抽取已删，每出生少 1 个 RNG 值）。
-     *
-     * **槽复用（对实验的明示偏离，用户 2026-10-14 指令"取消 36 上限"；仅
-     * cfg.slotReuse 世界开启——在线多生命世界）**：全部未生槽耗尽后取最靠前
-     * **已死**槽重生——玩家死亡→再排队的出生供给保障。缺省世界（金标准回放/
-     * 单机/统计等价）保持 env2_v24 硬上限（实证：trace-main-s1/d 等暴力轨迹
-     * 会耗尽 36 槽——复用若默认开启即破坏奇偶）。复用 = 恒星位置不动（"恒星
-     * 位置永不变"字面保持）、零额外 RNG（消耗序与新生同构）、认知态全清
-     * （见 reuseSlot）。
+     * v2.5 无界内生出生（env2_v25.py:309-359）：恒恰一个预滚额；池攒够即生
+     * （每刻至多 1 个）。**无科技继承**：出生科技恒 tech_spawn_lo（config 钉
+     * lo=hi=1.0——同起跑线；v2.3 的 P25-P75 抽取已删）。槽偏好三级：最靠前
+     * 未生槽 → 最靠前**已死**槽复用（社会态全清见 reuseSlot；**同刻死者即可
+     * 复用**——v2.5 无 deadNow 跳过；死因先于本刻 died_this_tick 装配被清空，
+     * 事件流死因 "" 抵达上层，由视图层 cause.unknown 兜底）→ 全槽存活且池可
+     * 负担 ⇒ `_grow` 扩容（守恒是唯一刹车）。
      */
-    activatePendingSpawns(deadNow?: Uint8Array): void {
+    activatePendingSpawns(): void {
         if (this.pending_spawns.length === 0) return;
         if (this.free_pool < this.pending_spawns[0]) return;
         let slot = -1;
@@ -986,21 +1023,21 @@ export class DarkForestEnv2 {
                 break;
             }
         }
-        if (slot < 0 && this.cfg.slotReuse === true) {
+        if (slot < 0) {
             for (let i = 0; i < this.n; i++) {
-                // 跳过本刻刚死者（deadNow，评审 Critical #2）：同刻死亡+复用会把
-                // 死者立即顶生——死因被 reuseSlot 抹空、上层以 alive 判死读到新住客
-                // ⇒ 吞死/幻影席位共享/重演漂移砖化。推迟一刻复用，语义零损。
-                if (deadNow?.[i] === 1) continue;
                 if (this.spawn_tick[i] <= 1e8 && this.alive[i] === 0) {
                     slot = i;
                     break;
                 }
             }
-            if (slot < 0) return; // 36 槽全数在场存活——无出生供给
-            this.reuseSlot(slot);
+            if (slot >= 0) {
+                this.reuseSlot(slot);
+            } else {
+                // v2.5.1：满员世界 + 池可负担 → 扩容（env2_v25.py:341-344）
+                this._grow(this.n + 1);
+                slot = this.n - 1;
+            }
         }
-        if (slot < 0) return;
         const spawnRes = this.pending_spawns.shift() as number;
         this.pending_spawns.push(this.rng.uniformRange(this.res_min, this.res_max)); // 再预滚下一个
         this.tech[slot] = this.tech_spawn_lo;
@@ -1008,16 +1045,20 @@ export class DarkForestEnv2 {
         this.free_pool -= spawnRes;
         this.spawn_tech[slot] = this.tech[slot];
         this.spawn_res[slot] = spawnRes;
+        this.peak_tech[slot] = this.tech[slot]; // v2.5：逐代峰值在出生时重置（:356）
         this.spawn_tick[slot] = this.t + 1;
         this.alive[slot] = 1;
         this.birth_log.push([this.t + 1, slot, spawnRes]);
     }
 
     /**
-     * 复用槽的旧主认知态清除（仅复用路径可达）。行+列都清：他人对旧主的
-     * known/observed 一并失效——旧主死亡时感知层已发 log.dark，新主是全新文明；
-     * first_detect_tick/peak_tech 一并归位。pending_reveal/pending_counter 中
-     * 引用本槽的条目全清：防死者死后揭发新主（延迟公开落在新主头上）、幽灵反曝光。
+     * 复用槽的旧主社会态清除（env2_v25.py:332-340 权威清单，仅复用路径可达）。
+     * 行+列都清：他人对旧主的 known/observed 一并失效——旧主死亡时感知层已发
+     * log.dark，新主是全新文明。**照抄的 v2.5 语义（勿"修复"）**：① last_invader
+     * 不清——复生 df 仍可反咬前任的入侵者；② pending_reveal/pending_counter
+     * 不滤——死者被揭露的延迟公开落在复生者头上（出生即 public 的信息穿越）；
+     * ③ 死因清空先于本刻 died_this_tick 装配（"" 抵达事件流）。peak_tech 由
+     * activatePendingSpawns 的公共路径在出生时重置。
      */
     private reuseSlot(j: number): void {
         const n = this.n;
@@ -1030,15 +1071,79 @@ export class DarkForestEnv2 {
             this.first_detect_tick[j * n + i] = -1;
         }
         this.public_[j] = 0;
+        this.under_attack[j] = 0;
         this.in_domain[j] = 0;
         this.domain_windup[j] = 0;
         this.death_cause[j] = "";
         this.last_action[j] = A_SILENT;
-        this.peak_tech[j] = this.tech_spawn_lo;
-        this._invaders.delete(j);
-        this._targets.delete(j);
-        this.pending_reveal = this.pending_reveal.filter((e) => e[1] !== j);
-        this.pending_counter = this.pending_counter.filter((i) => i !== j);
+    }
+
+    /**
+     * v2.5.1 扩容（env2_v25.py:279-307）：new_n = max(2n, min_slots)；既有槽状态
+     * 原样保留，新槽白纸（未生 1e9 / 0 / False / A_SILENT / -1 / ""），新槽位置
+     * **一次**批量抽取 rng.uniform(0, world, m*2)。实验从未触发（probe：max_alive
+     * 9-12 < 36）；游戏配置面板可调大 resTotalBudget 故可达。python 在增长刻自身
+     * 的 resolve 尾部 _obs() 即崩（Q16）——活不到 reset；TS 修复后 reset 亦自洽
+     *（游戏每局新 env，路径不可达）。
+     */
+    private _grow(minSlots: number): void {
+        const newN = Math.max(this.n * 2, Math.trunc(minSlots));
+        const m = newN - this.n;
+        const oldN = this.n;
+        // 新槽位置：一次批量（python rng.uniform(0, world, size=(m,2)) 的平铺）
+        const fresh = this.rng.uniformArray(m * 2, 0, this.world);
+        const pos = new Float64Array(newN * 2);
+        pos.set(this.pos);
+        for (let k = 0; k < m; k++) {
+            pos[(oldN + k) * 2] = fresh[k * 2];
+            pos[(oldN + k) * 2 + 1] = fresh[k * 2 + 1];
+        }
+        this.pos = pos;
+        const padF64 = (src: Float64Array, fill: number): Float64Array => {
+            const out = new Float64Array(newN).fill(fill);
+            out.set(src);
+            return out;
+        };
+        const padU8 = (src: Uint8Array): Uint8Array => {
+            const out = new Uint8Array(newN);
+            out.set(src);
+            return out;
+        };
+        const padI32 = (src: Int32Array, fill: number): Int32Array => {
+            const out = new Int32Array(newN).fill(fill);
+            out.set(src);
+            return out;
+        };
+        const pad2U8 = (src: Uint8Array): Uint8Array => {
+            const out = new Uint8Array(newN * newN);
+            for (let i = 0; i < oldN; i++)
+                for (let j = 0; j < oldN; j++) out[i * newN + j] = src[i * oldN + j];
+            return out;
+        };
+        const pad2I32 = (src: Int32Array): Int32Array => {
+            const out = new Int32Array(newN * newN).fill(-1);
+            for (let i = 0; i < oldN; i++)
+                for (let j = 0; j < oldN; j++) out[i * newN + j] = src[i * oldN + j];
+            return out;
+        };
+        this.spawn_tick = padF64(this.spawn_tick, 10 ** 9);
+        this.tech = padF64(this.tech, 0);
+        this.res = padF64(this.res, 0);
+        this.spawn_tech = padF64(this.spawn_tech, 0);
+        this.spawn_res = padF64(this.spawn_res, 0);
+        this.peak_tech = padF64(this.peak_tech, 0);
+        this.alive = padU8(this.alive);
+        this.known = pad2U8(this.known);
+        this.observed = pad2U8(this.observed);
+        this.public_ = padU8(this.public_);
+        this.under_attack = padU8(this.under_attack);
+        this.in_domain = padU8(this.in_domain);
+        this.domain_windup = padU8(this.domain_windup);
+        this.first_detect_tick = pad2I32(this.first_detect_tick);
+        this.last_action = padI32(this.last_action, A_SILENT);
+        this.last_invader = padI32(this.last_invader, -1);
+        for (let k = 0; k < m; k++) this.death_cause.push("");
+        this.n = newN;
     }
 
     /** Q7（env2.py:219-222）：槽位仅在 spawn_tick 后激活——保留 parity（resolve 不引用） */

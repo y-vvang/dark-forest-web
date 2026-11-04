@@ -8,7 +8,7 @@
  */
 import { useState } from "react";
 
-import { V24_ARMS, V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
+import { V25_ARMS, V25_CONFIG, type EnvConfig } from "@/lib/engine/config";
 import { useI18n, type MessageKey } from "@/i18n";
 import {
     CFG_FIELDS,
@@ -65,15 +65,16 @@ export function ConfigPanel({
                 type="button"
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}
-                className="tnum w-full rounded-panel border border-subtle px-3 py-2 text-left text-xs text-dim hover:border-strong hover:text-ink"
+                className="w-full rounded-panel border border-subtle px-3 py-2 text-left text-xs text-dim hover:border-strong hover:text-ink"
             >
-                {open ? "▾" : "▸"} tMax · detectRadius · killBase · …
+                {open ? "▾" : "▸"} {t("solo.config.intro")}
             </button>
             {open && (
                 <div className="mt-3 flex flex-col gap-4">
                     {GROUP_ORDER.map((group) => (
                         <section key={group} className="flex flex-col gap-2">
                             <h3 className="text-sm text-ink">{t(group)}</h3>
+                            <p className="text-xs text-dim">{t(`${group}.desc` as MessageKey)}</p>
                             {group === "solo.config.g.reward" && (
                                 <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-xs text-dim">
@@ -115,7 +116,7 @@ export function ConfigPanel({
                                             className="tnum w-24 rounded-panel border border-subtle bg-panel px-2 py-1 text-right text-xs text-ink focus:border-strong"
                                         />
                                         <span className="tnum w-10 text-right text-xs text-faint">
-                                            {V24_CONFIG[f.key as keyof EnvConfig]}
+                                            {V25_CONFIG[f.key as keyof EnvConfig]}
                                         </span>
                                     </span>
                                 </label>
@@ -137,7 +138,7 @@ export function ConfigPanel({
                                     className="tnum w-24 rounded-panel border border-subtle bg-panel px-2 py-1 text-right text-xs text-ink focus:border-strong"
                                 />
                                 <span className="tnum w-10 text-right text-xs text-faint">
-                                    {V24_CONFIG.techSpawnLo}
+                                    {V25_CONFIG.techSpawnLo}
                                 </span>
                             </span>
                         </label>
@@ -145,7 +146,7 @@ export function ConfigPanel({
                     <div className="flex items-center justify-between">
                         <button
                             type="button"
-                            onClick={() => onChange({ ...V24_CONFIG })}
+                            onClick={() => onChange({ ...V25_CONFIG })}
                             className="rounded-panel border border-subtle px-3 py-1.5 text-xs text-dim hover:border-strong hover:text-ink"
                         >
                             {t("solo.config.reset")}

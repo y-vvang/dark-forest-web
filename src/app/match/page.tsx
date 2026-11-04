@@ -11,7 +11,6 @@ import {
 import { AuxButtons } from "@/components/aux-buttons";
 import { EndOverlay } from "@/components/end-overlay";
 import { EventLog } from "@/components/event-log";
-import { InvasionModal } from "@/components/invasion-modal";
 import { StarChart } from "@/components/star-chart";
 import { StatusPanel } from "@/components/status-panel";
 import { BrandLink, TopBar } from "@/components/top-bar";
@@ -130,7 +129,7 @@ function MatchConsole() {
     const tickStr = `${String(v.tick).padStart(3, "0")}/${v.tMax}`;
 
     return (
-        <div className="flex min-h-svh flex-col gap-3 p-3">
+        <div className="flex min-h-svh flex-col">
             <TopBar
                 left={<BrandLink />}
                 right={
@@ -148,97 +147,87 @@ function MatchConsole() {
                     </>
                 }
             />
-
-            {armed !== null && (
-                <div className="flex items-center justify-between rounded-panel border border-lethal bg-panel px-3 py-2">
-                    <p className="text-sm text-lethal">{t("match.target")}</p>
-                    <div className="flex gap-2">
-                        {armed !== null && SKIPPABLE.has(armed) && (
+            <main className="flex flex-1 flex-col gap-3 p-3">
+                {armed !== null && (
+                    <div className="flex items-center justify-between rounded-panel border border-lethal bg-panel px-3 py-2">
+                        <p className="text-sm text-lethal">{t("match.target")}</p>
+                        <div className="flex gap-2">
+                            {armed !== null && SKIPPABLE.has(armed) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPending({ id: armed, target: -1 }); // 最近已知兜底
+                                        setArmed(null);
+                                    }}
+                                    className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
+                                >
+                                    {t("match.target.skip")}
+                                </button>
+                            )}
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setPending({ id: armed, target: -1 }); // 最近已知兜底
-                                    setArmed(null);
-                                }}
+                                onClick={() => setArmed(null)}
                                 className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
                             >
-                                {t("match.target.skip")}
+                                {t("match.target.cancel")}
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_540px]">
+                    <div className="mx-auto w-full max-w-[min(720px,calc(100svh-20rem))]">
+                        <StarChart
+                            civs={v.markers}
+                            selectableIds={targeting ? v.targetCandidates : []}
+                            pingIds={[]}
+                            invaderIds={v.invasion !== null ? [v.invasion.invaderId] : []}
+                            onPick={onPick}
+                        />
+                    </div>
+                    <div className="flex flex-col gap-3">
+                        <AuxButtons reward={v.reward} onAdvise={session.advise} />
+                        {v.self !== null ? (
+                            <StatusPanel
+                                tech={v.self.tech}
+                                res={v.self.res}
+                                inDomain={v.self.inDomain}
+                                gates={[v.panel.gateObserveTech, v.panel.gateStrikeTech]}
+                                resMax={v.panel.resMax}
+                            />
+                        ) : (
+                            <div className="rounded-panel border border-subtle bg-panel px-3 py-4 text-center">
+                                <p className="anim-alert-blink text-sm text-dim">
+                                    {t("match.waitBirth")}
+                                </p>
+                            </div>
                         )}
-                        <button
-                            type="button"
-                            onClick={() => setArmed(null)}
-                            className="rounded-panel border border-subtle px-2 py-1 text-xs text-dim hover:border-strong hover:text-ink"
-                        >
-                            {t("match.target.cancel")}
-                        </button>
+                        <ActionGrid
+                            tech={v.self?.tech ?? 0}
+                            res={v.self?.res ?? 0}
+                            hasKnown={hasKnown}
+                            valid={v.valid}
+                            stance={stance}
+                            pending={pending}
+                            armed={armed}
+                            onSelect={onSelect}
+                            onArm={setArmed}
+                            onExecute={onExecute}
+                            executeDisabled={executeDisabled}
+                            cfg={v.cfg}
+                            rechoice={v.invasion}
+                            onRechoice={(a) => session.submitRechoice(a)}
+                            onKeepOriginal={() => session.cancelRechoice()}
+                        />
                     </div>
                 </div>
-            )}
 
-            <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_540px]">
-                <div className="mx-auto w-full max-w-[min(720px,calc(100svh-20rem))]">
-                    <StarChart
-                        civs={v.markers}
-                        selectableIds={targeting ? v.targetCandidates : []}
-                        pingIds={[]}
-                        onPick={onPick}
-                    />
-                </div>
-                <div className="flex flex-col gap-3">
-                    <AuxButtons reward={v.reward} onAdvise={session.advise} />
-                    {v.self !== null ? (
-                        <StatusPanel
-                            tech={v.self.tech}
-                            res={v.self.res}
-                            inDomain={v.self.inDomain}
-                            gates={[v.panel.gateObserveTech, v.panel.gateStrikeTech]}
-                            resMax={v.panel.resMax}
-                        />
-                    ) : (
-                        <div className="rounded-panel border border-subtle bg-panel px-3 py-4 text-center">
-                            <p className="anim-alert-blink text-sm text-dim">
-                                {t("match.waitBirth")}
-                            </p>
-                        </div>
-                    )}
-                    <ActionGrid
-                        tech={v.self?.tech ?? 0}
-                        res={v.self?.res ?? 0}
-                        hasKnown={hasKnown}
-                        valid={v.valid}
-                        stance={stance}
-                        pending={pending}
-                        armed={armed}
-                        onSelect={onSelect}
-                        onArm={setArmed}
-                        onExecute={onExecute}
-                        executeDisabled={executeDisabled}
-                        cfg={v.cfg}
-                    />
-                </div>
-            </div>
+                <EventLog events={v.log} />
 
-            <EventLog events={v.log} />
-
-            {v.invasion !== null && (
-                <InvasionModal
-                    invaderId={v.invasion.invaderId}
-                    /* solo untimed (DESIGN.md §13) */
-                    onCounter={() => session.submitRechoice(6)}
-                    onDomain={() => session.submitRechoice(5)}
-                    onCancel={() => session.cancelRechoice()}
-                    domainDisabled={!v.valid[5]}
-                    domainTitle={
-                        !v.valid[5]
-                            ? t("actions.disabled.tech", { v: v.cfg.gateDomainTech })
-                            : undefined
-                    }
-                />
-            )}
-            {v.end !== null && (
-                <EndOverlay end={v.end} advised={session.advised} tMax={v.tMax} />
-            )}
+                {v.end !== null && (
+                    <EndOverlay end={v.end} advised={session.advised} tMax={v.tMax} />
+                )}
+            </main>
         </div>
     );
 }

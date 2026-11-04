@@ -7,7 +7,7 @@ import { Panel } from "./panel";
  * with lit gate ticks at 5.0/7.0, resource bar on 0–20 (res_max).
  * Inside a black domain the panel border turns domain-violet.
  * Gates/resMax now arrive as props——环境常量可配置（2026-10-10）后不再从
- * V24_CONFIG 静态读取（res 域仍以默认 resMax 显示，环境语义不变）。
+ * V25_CONFIG 静态读取（res 域仍以默认 resMax 显示，环境语义不变）。
  */
 export function StatusPanel({
     tech,

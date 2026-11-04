@@ -1,10 +1,10 @@
 /**
- * 引擎类型与常量 —— 与 env2_v24.py 一一对应（v2.4）。
+ * 引擎类型与常量 —— 与 env2_v25.py 一一对应（v2.5）。
  *
- * 命名约定：字段/键保持 env2_v24.py 的 snake_case（parity 优先；人类工程学由会话视图层承担）。
- * 动作枚举序（env2_v24.py:85-90）：SILENT/DEVELOP/BROADCAST_ALL/BROADCAST_OTHER/
+ * 命名约定：字段/键保持 env2_v25.py 的 snake_case（parity 优先；人类工程学由会话视图层承担）。
+ * 动作枚举序（env2_v25.py:85-90）：SILENT/DEVELOP/BROADCAST_ALL/BROADCAST_OTHER/
  * STRIKE/BLACK_DOMAIN/INVADE/OBSERVE——v2.4 删 STRIKE_WEAK/STRONG（观测前作弊）、
- * BOTHER 恢复为揭露目标、BSELF 改名 BALL（语义不变）。
+ * BOTHER 恢复为揭露目标、BSELF 改名 BALL（语义不变）；v2.5 动作集不变。
  */
 
 // ------------------------------------------------------------------ actions
@@ -21,7 +21,7 @@ export type ActionId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export const N_ACTIONS = 8;
 export const NEAR_K = 3;
-export const OBS_DIM = 7 + N_ACTIONS + NEAR_K * 7; // = 36（env2_v24.py:91）
+export const OBS_DIM = 9 + N_ACTIONS + NEAR_K * 7; // = 38（env2_v25.py:108：+under_attack/self_public 两标量）
 
 // --------------------------------------------------------------------- info
 /** "" 存活/未生；strike|invade|mutual|starve 为死亡原因（env2_v24.py:227） */
@@ -73,7 +73,7 @@ export interface RewardDetail {
     bdEnter: Uint8Array;
 }
 
-/** resolve() 返回（env2_v24.py:654）：obs(n×36 f32) / valid(n×8) 平铺行主序 */
+/** resolve() 返回（env2_v25.py:750 附近）：obs(n×38 f32) / valid(n×8) 平铺行主序 */
 export interface TickResult {
     obs: Float32Array;
     valid: Uint8Array;

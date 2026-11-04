@@ -3,7 +3,7 @@
  *
  * New UI text must be added to the bilingual vocabulary table in DESIGN.md §7
  * FIRST, then here (DESIGN.md §12). Keys are flat and grouped by screen:
- * nav. home. solo. match. actions. log. modal. end. online. legend. opp. aria.
+ * nav. home. solo. match. actions. log. rechoice. end. online. legend. opp. aria.
  *
  * `zh.ts` implements `Dict` — a missing key there is a compile error, and at
  * runtime the resolver falls back to this file (default locale: en).
@@ -28,7 +28,7 @@ export const en = {
     "home.mode.solo.desc": "Face trained models or preset strategies from the original experiment.",
     "home.mode.online": "Queue into the shared world",
     "home.mode.online.desc": "No account needed. All online players queue into one world.",
-    "home.footer": "A faithful port of the dark-forest multi-agent RL experiment (v2.4).",
+    "home.footer": "A faithful port of the dark-forest multi-agent RL experiment.",
 
     "legend.self": "You",
     "legend.self.desc": "Your civilization and its detection radius",
@@ -46,7 +46,8 @@ export const en = {
     "solo.opponents": "Choose your opponents",
     "solo.selected": "{n} selected",
     "solo.pool": "Pool",
-    "solo.pool.desc": "36 slots. You take one seat; the rest fill with your chosen opponents.",
+    "solo.pool.desc":
+        "Births are pool-fed: you arrive at a random moment; dead slots get recycled for newcomers.",
     "solo.start": "Start match",
     "solo.disclosure":
         "Action profiles are from a 150-episode mixed pool (single training seed) — indicative only.",
@@ -60,6 +61,15 @@ export const en = {
     "solo.config.g.force": "Force",
     "solo.config.g.gates": "Gates",
     "solo.config.g.reward": "Rewards",
+    "solo.config.intro":
+        "The rulebook under the match: universe constants. If unsure, leave them — defaults mirror the experiment.",
+    "solo.config.g.clock.desc": "How long the world runs. Online ticks are fixed at 20s; this affects solo only.",
+    "solo.config.g.detect.desc": "Who sees whom: detection odds and how far sight reaches.",
+    "solo.config.g.econ.desc": "Where resources come from and go: total budget, birth cost, natural drain.",
+    "solo.config.g.tech.desc": "How fast civilizations grow, and how far.",
+    "solo.config.g.force.desc": "The killing rules for strikes and invasions.",
+    "solo.config.g.gates.desc": "Tech/resource thresholds each action requires.",
+    "solo.config.g.reward.desc": "Your scoring function (opponents are unaffected).",
     "solo.config.armPresets": "Reward-arm presets",
     "solo.config.default": "Default",
     "solo.config.reset": "Reset to defaults",
@@ -77,13 +87,15 @@ export const en = {
     "opp.pacifist.name": "Pacifist",
     "opp.pacifist.desc": "Only develops or stays silent; never attacks.",
     "opp.arm.a_classic.desc":
-        "Mostly silent development (silent 0.62 · develop 0.36), occasional invasion harvesting",
+        "Steady farming (develop 0.76 · silent 0.12), occasional invasion harvesting",
     "opp.arm.b_terminal.desc":
-        "Nearly always silent (0.82) — the only signal is death itself",
+        "Mostly silent (0.43) with develop and occasional reveals — terminal-reward shaped",
     "opp.arm.c_res.desc":
-        "Plunderer: constant invasion harvesting (11.1 per episode), lives on loot",
+        "Plunderer: constant invasion harvesting (6.45 per 100 ticks), lives on loot",
     "opp.arm.d_malintent.desc":
-        "Info-war: reveals others' coordinates (0.18) + steady invasions — the borrowed knife",
+        "Info-war taken to the extreme: reveals others' coordinates (0.807) — the borrowed knife",
+    "opp.champion.desc":
+        "A generalist that has seen every strategy family (league-trained) — diverse, not dominant",
 
     "match.tick": "Tick",
     "match.alive": "Alive",
@@ -113,7 +125,7 @@ export const en = {
     "match.reward.arms": "Reward-arm comparison",
     "match.reward.note": "Reward settings do not affect opponent models.",
     "match.advisor": "Advice",
-    "match.advisor.title": "The four arms' choices at this step",
+    "match.advisor.title": "The five models' choices at this step",
 
     "actions.silent": "Silent",
     "actions.silent.sub": "Detection cross-section ×0.25",
@@ -138,7 +150,7 @@ export const en = {
 
     "log.contact": "Unknown signal detected ({x},{y})",
     "log.observed": "Observed: #{id} tech {tech} · res {res}",
-    "log.broadcast": "#{id} broadcast its coordinates",
+    "log.broadcast": "#{id} coordinates broadcast",
     "log.invaded": "#{id} is invading you — counter window open",
     "log.ownStrikeBlocked": "Your strike was blocked by a shield (#{id} shed {take})",
     "log.ownStrikeHit": "Your strike hit #{id}",
@@ -146,6 +158,7 @@ export const en = {
     "log.ownInvade": "You invaded #{id}, looted {loot}",
     "log.ownBroadcast": "You broadcast — public to all next tick",
     "log.ownReveal": "You revealed #{id} — public to all next tick",
+    "log.revealed": "Your coordinates are now public — you don't know by whom",
     "log.born": "A new civilization is born",
     "log.dark": "A known contact went dark",
     "log.death": "You are dead. Cause: {cause}. Survived {ticks} ticks.",
@@ -154,14 +167,15 @@ export const en = {
     "cause.strike": "strike",
     "cause.invade": "invasion",
     "cause.mutual": "mutual destruction",
+    "cause.unknown": "unknown",
 
-    "modal.title": "INVASION ALERT",
-    "modal.body": "#{id} is invading you · counter window",
-    "modal.counter": "Counter-invade",
-    "modal.counter.sub": "Mutual destruction — you both die",
-    "modal.domain": "Declare Black Domain",
-    "modal.domain.sub": "Cancels the invasion now; irreversible",
-    "modal.cancel": "Cancel",
+    "rechoice.notice": "#{id} is invading you — re-choose this tick's action",
+    "rechoice.deadline": "{s}s to deadline",
+    "rechoice.counter": "Counter-invade",
+    "rechoice.counter.sub": "Mutual destruction — you both die",
+    "rechoice.keep": "Keep original action",
+    "rechoice.targetHint": "Target carries over from this tick",
+    "rechoice.submitted": "Re-choice submitted — waiting for the tick to settle",
 
     "end.dead.title": "You are dead",
     "end.dead.cause": "Cause: {cause}",

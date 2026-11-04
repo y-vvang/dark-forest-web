@@ -170,7 +170,7 @@ test("invasion: counter → mutual; same-tick log entries both delivered; dead v
     await h.svc.submitAction(a.token, 3, 6, 5); // 窗 3 提交入侵（known 由接缝注入）
     h.tick(); // 结算刻 3 → 刻 4 飞行，tok2 受害
     const sb1 = consoleOf(await h.svc.getState(b.token, 0));
-    expect(sb1.view.invasion).toEqual({ invaderId: 4 });
+    expect(sb1.view.invasion).toEqual({ invaderId: 4, originalAction: 0 }); // 原动作 = 未提交缺省 SILENT
     // 出生锚定 + 受害通知（env.t+1——与同刻结算事件同刻号）；其余条目为世界噪声
     expect(sb1.view.log[0].key).toBe("match.birthSelf");
     const invaded = sb1.view.log.find((e) => e.key === "log.invaded");
@@ -216,6 +216,40 @@ test("invasion: rechoice -1 keeps the original action (expiry semantics, explici
     expect(sb.view.end).toMatchObject({ kind: "dead", cause: "invade" }); // 截止保原 → 死
     const sa = consoleOf(await h.svc.getState(a.token, 1));
     expect(sa.view.self).not.toBeNull(); // 入侵者存活
+});
+
+test("invasion: rechoice widened to any valid action (v2.5) — echo + mode exit; out-of-range rejected", async () => {
+    // 用户 2026-11-01（动作格反咬项）：任意合法动作可作重选。DEVELOP(1) 旧实现
+    // 拒收（invalid-action）——现接受（非 5/6 重选不改变入侵结局：受害者照死）；
+    // ConsoleView.rechoice 回显 = 客户端重选模式的退出判据（恢复下一刻提交通道）。
+    const h = makeService(INJECT_KNOWN);
+    const a = await h.svc.join();
+    const b = await h.svc.join();
+    h.tick();
+    h.tick();
+    consoleOf(await h.svc.getState(a.token, 0)); // 两者出生；刻 3 飞行
+    await h.svc.submitAction(a.token, 3, 6, 5);
+    h.tick();
+    const sb1 = consoleOf(await h.svc.getState(b.token, 0)); // 刻 4 飞行，tok2 受害
+    expect(sb1.rechoice).toBe(null); // 未重选——客户端进入重选模式
+    const rb = await h.svc.submitRechoice(b.token, 4, 1); // DEVELOP 重选（旧实现：invalid-action）
+    if (rb.kind !== "console") throw new Error("expected console");
+    expect(rb.rechoice).toBe(1); // 回显——客户端退出重选模式
+    h.tick();
+    const sb2 = consoleOf(await h.svc.getState(b.token, 0));
+    expect(sb2.view.end).toMatchObject({ kind: "dead", cause: "invade" }); // 重选发展不救
+    // 越界仍拒：≥ N_ACTIONS 与 < -1
+    const h2 = makeService(INJECT_KNOWN);
+    const a2 = await h2.svc.join();
+    const b2 = await h2.svc.join();
+    h2.tick();
+    h2.tick();
+    consoleOf(await h2.svc.getState(a2.token, 0)); // 推进：两者出生；刻 3 飞行
+    await h2.svc.submitAction(a2.token, 3, 6, 5);
+    h2.tick();
+    consoleOf(await h2.svc.getState(b2.token, 0)); // 刻 4 飞行，b2 受害
+    await rejects(h2.svc.submitRechoice(b2.token, 4, 9), "invalid-action");
+    await rejects(h2.svc.submitRechoice(b2.token, 4, -2), "invalid-action");
 });
 
 test("leave: unseated removed (token void), seated no-op, unknown 404", async () => {

@@ -6,9 +6,10 @@ import type { OnlineView } from "./types";
 
 /**
  * ViewTracker 的在线宿主适配器。solo/view.ts 只认 SoloMatch 形状，但其运行期
- * 消费面仅六个成员（2026-10-12 逐行核实：phase / playerSlot / env / lastResult /
- * getPendingInvader / getEnd）——本文件是全仓唯一的 SoloMatch 类型收口处
- * （as unknown as SoloMatch），solo 层零改动。
+ * 消费面仅七个成员（2026-10-12 逐行核实 + 2026-11-01 v2.5 增补：phase /
+ * playerSlot / env / lastResult / getPendingInvader / getPendingOriginal / getEnd）
+ * ——本文件是全仓唯一的 SoloMatch 类型收口处（as unknown as SoloMatch），
+ * solo 层零改动。
  *
  * getter 直读 SeatHost：驱动在 resolve 间变更 host 字段，适配器必须活引用。
  */
@@ -37,6 +38,12 @@ export function makeTrackerHost(host: SeatHost): ViewTracker {
             return host.lastResult;
         },
         getPendingInvader: () => host.pendingInvader,
+        // v2.5 重选视图：本刻原动作 = beginTick 锁定的 env._actions[victim]
+        getPendingOriginal: (): { action: number; target: number } | null => {
+            const p = host.playerSlot;
+            if (p === null || host.env._actions === null) return null;
+            return { action: host.env._actions[p], target: host.env._targets.get(p) ?? -1 };
+        },
         getEnd: () => host.end,
     } as unknown as SoloMatch;
     return new ViewTracker(adapter);

@@ -1,30 +1,33 @@
-# testdata 口径披露（一致性验收 · 金标准，v2.4）
+# testdata 口径披露（一致性验收 · 金标准，v2.5）
 
 生成：`PYTHONUTF8=1 python3 scripts/golden/record_golden.py`（开发期专用；只读引用 `experiment/`）。
-机制：录制 env2_v24.py 每一次 RNG 调用（`uniform`/`choice` 的方法+参数+返回值）与逐刻全状态快照；
+机制：录制 env2_v25.py 每一次 RNG 调用（`uniform`/`choice` 的方法+参数+返回值）与逐刻全状态快照；
 TS 端 `ReplayRng`（`src/lib/engine/rng.ts`）按序喂入录制值 → 引擎重演同一随机轨迹 →
 逐刻全状态/obs/info/rewards 精确比对 + 消耗序断言（`assertExhausted`）。**逻辑偏差确定性爆出，无统计功效依赖。**
 
-v2.4 录制要点（vs v2.3 轮）：轨迹 `meta.cfg` 记录完整 env 参数（奖励臂轨迹自带其
-override——TS 回放按 trace 自建 EnvConfig）；驱动循环对齐 `stage_b_v24.py`
-（目标请求集 = INVADE/STRIKE/BROADCAST_OTHER/OBSERVE 四动作）；出生无科技继承
-（**每次内生出生少消耗 1 个 RNG 值**，v2.3 的 percentile 抽取已不存在）。
+v2.5 录制要点（vs v2.4 轮，重录 2026-11-01）：快照新增 `under_attack`/`last_invader` 字段；
+`meta.cfg` 新增 `nNorm`（归一化固定分母）；预制策略 = **v2b**（stage_b_v25b——df 反咬 /
+pacifist 藏匿；驱动循环对齐该脚本）；**死槽复用为缺省**——trace-main-d 159 次出生重度行使
+复用路径（复用分支消耗预滚重抽，RNG 消耗序随轨迹锁定）；臂 checkpoint = `runs/v25_arms`。
+v2.4 要点保留：轨迹 `meta.cfg` 记录完整 env 参数（奖励臂轨迹自带 override）；目标请求集 =
+INVADE/STRIKE/BROADCAST_OTHER/OBSERVE 四动作；出生无科技继承。
 
 ## 轨迹清单
 
 | 文件 | 内容 | 备注 |
 |---|---|---|
-| `trace-main-s1.json.gz` | 完整 250 刻，stage_b 池型（learner=a_classic + random/df/pacifist 各 9） | a_classic = v2.3-fix 原味奖励臂 |
+| `trace-main-s1.json.gz` | 完整 250 刻，stage_b 池型（learner=a_classic + random/df/pacifist 各 9） | a_classic = 原味奖励臂（33 次出生，未触顶） |
 | `trace-main-s2.json.gz` | 完整 250 刻，全 pacifist | 发展/爆炸/出生/饿死长尾 |
-| `trace-main-d.json.gz` | 完整 250 刻，stage_b 池型（learner=d_malintent）+ 该臂奖励参数 | 覆盖 BROADCAST_OTHER 揭露 / attack 赏金 / res 津贴路径 |
+| `trace-main-d.json.gz` | 完整 250 刻，stage_b 池型（learner=d_malintent）+ 该臂奖励参数 | **159 次出生——死槽复用重度覆盖**；揭露/赏金/津贴路径 |
 | `trace-tgt-mutual.json.gz` | 入侵→反咬→互毁 | |
 | `trace-tgt-shield.json.gz` | 护盾挡下（零 RNG 消耗） | |
 | `trace-tgt-windup.json.gz` | 黑域风窗免疫打击 + 入域后入侵取消 | |
 | `trace-tgt-heat.json.gz` | 资源枯竭改造局 → 晚局经济覆盖 | 热寂 done 分支由 `resolve-c.test.ts` 单测锁定 |
-| `stats.json` | 统计等价第二口径参考（30 局 presets-only 聚合，v2.4 环境） | 由 stat-equivalence 测试消费 |
+| `stats.json` | 统计等价第二口径参考（30 局 presets-only 聚合，v2.5 环境 + v2b 预制；**动作计数 = bincount(re[alive]) 仅存活槽**） | 由 stat-equivalence 测试消费 |
 
-另：`dqn-outputs.json`（4 奖励臂 × 10 随机输入的 numpy 前向，`record_dqn_outputs.py`）由
-`src/lib/opponents/dqn.test.ts` 消费；`public/models/<arm>.json`（4 臂权重，`convert_models.py`）。
+另：`dqn-outputs.json`（**5 模型**（四臂 + champion）× 10 随机输入（38 维）的 numpy 前向，
+`record_dqn_outputs.py`）由 `src/lib/opponents/dqn.test.ts` 消费；`public/models/<id>.json`
+（5 模型权重，`convert_models.py`）。
 
 ## 容差与口径（与 golden-replay.test.ts 一致）
 

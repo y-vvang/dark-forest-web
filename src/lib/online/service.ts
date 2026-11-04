@@ -8,7 +8,6 @@
  * ScriptedRng 等有状态流不可跨重演共享。
  */
 import {
-    A_BDOMAIN,
     A_BOTHER,
     A_INVADE,
     A_OBSERVE,
@@ -242,13 +241,18 @@ export function createOnlineService(opts: ServiceOptions): OnlineService {
             const delta =
                 logSince === null ? [] : rt.view.log.slice(anchor + Math.max(0, logSince));
             const open = rec.status === "running" ? openTickEntry(rec) : null;
-            const sub = open !== null ? open.nextActions[String(slot)] : undefined;
+            // 死者不回显提交（评审 M-1）：v2.5 复用使 rec.seats 的槽可能已归新住客——
+            // 槽键协议下死者会看到新住客的 submission/rechoice（数据混淆，放大 I-2 面）
+            const dead = rt.host.end !== null;
+            const sub = !dead && open !== null ? open.nextActions[String(slot)] : undefined;
+            const re = !dead && open !== null ? open.rechoices[String(slot)] : undefined;
             return {
                 kind: "console",
                 token,
                 timing: timingOf(ctx, nowMs),
                 view: { ...rt.view, log: delta },
                 submission: sub !== undefined ? { action: sub[0], target: sub[1] } : null,
+                rechoice: re !== undefined ? re : null,
             };
         }
         if (rec.queue.includes(token))
@@ -417,8 +421,15 @@ export function createOnlineService(opts: ServiceOptions): OnlineService {
                 if (cur === null) throw new OnlineError("unknown-token");
                 const slot = seatOf(cur, token);
                 const { rec, state } = cur;
-                if (rec.status === "ended" || state.env.alive[slot] === 0)
-                    throw new OnlineError("not-born"); // 无可行动文明
+                const rtAlive = state.runtimes.get(token);
+                if (
+                    rec.status === "ended" ||
+                    state.env.alive[slot] === 0 ||
+                    rtAlive === undefined ||
+                    rtAlive.host.end !== null
+                )
+                    // 无可行动文明（含死席——v2.5 槽位可被新住客复用，陈旧提交拒收）
+                    throw new OnlineError("not-born");
                 if (tick !== inFlightTick(rec)) throw new OnlineError("stale-tick");
                 if (!Number.isInteger(action) || action < 0 || action >= N_ACTIONS)
                     throw new OnlineError("invalid-action");
@@ -455,15 +466,22 @@ export function createOnlineService(opts: ServiceOptions): OnlineService {
                 if (cur === null) throw new OnlineError("unknown-token");
                 const slot = seatOf(cur, token);
                 const { rec, state } = cur;
+                const rt0 = state.runtimes.get(token);
+                if (rt0 === undefined || rt0.host.end !== null)
+                    // 死席陈旧提交拒收（v2.5 槽位可被新住客复用——alive[slot]=1 是新住客）
+                    throw new OnlineError("not-born");
                 if (rec.status === "ended" || state.env.alive[slot] === 0 || !state.inFlightInvaders.has(slot))
                     throw new OnlineError("not-invaded");
                 if (tick !== inFlightTick(rec)) throw new OnlineError("stale-tick");
-                if (action !== -1 && action !== A_BDOMAIN && action !== A_INVADE)
+                // v2.5 放宽（用户 2026-11-01 动作格反咬项）：任意合法动作可作重选；
+                // 尽力而为的合法行检查（镜像 submitAction——入侵通知保证反咬恒合法，
+                // env stageSanitize 为最终权威）；-1 = 明确保持原动作（协议兼容）
+                if (action !== -1 && (!Number.isInteger(action) || action < 0 || action >= N_ACTIONS))
                     throw new OnlineError("invalid-action");
-                if (action === A_BDOMAIN) {
+                if (action >= 0) {
                     const rt = state.runtimes.get(token);
-                    if (rt === undefined || rt.view === null || !rt.view.valid[A_BDOMAIN])
-                        throw new OnlineError("invalid-action"); // BD 门 tech>5（尽力而为）
+                    if (rt === undefined || rt.view === null || !rt.view.valid[action])
+                        throw new OnlineError("invalid-action");
                 }
                 openTickEntry(rec).rechoices[String(slot)] = action;
                 await advance(cur, now); // 重选落库（结算恒在到点）

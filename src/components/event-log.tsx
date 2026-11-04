@@ -16,6 +16,7 @@ const LOG_TONE: Partial<Record<string, string>> = {
     "log.ownStrikeMiss": "text-lethal",
     "log.ownInvade": "text-lethal",
     "log.ownBroadcast": "text-ink",
+    "log.revealed": "text-flash", // v2.5 self_public——公开语义通道（白）
     "log.born": "text-resource",
     "log.dark": "text-dim",
     "log.death": "text-lethal",
@@ -28,6 +29,7 @@ const CAUSE_KEYS = new Set<MessageKey>([
     "cause.strike",
     "cause.invade",
     "cause.mutual",
+    "cause.unknown", // v2.5 同刻复用清除死因的兜底
 ]);
 
 /**

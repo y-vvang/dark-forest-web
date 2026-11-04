@@ -13,9 +13,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { isOpponentId } from "@/lib/opponents/catalog";
+import { MODEL_IDS, isOpponentId } from "@/lib/opponents/catalog";
 import { act, loadModel, type ModelWeights } from "@/lib/opponents/dqn";
-import { ARM_IDS } from "@/lib/solo/rewards";
 import { readEnvConfig } from "@/lib/solo/cfg-io";
 import { N_ACTIONS, OBS_DIM } from "@/lib/engine/types";
 import { SoloMatch } from "@/lib/solo/match";
@@ -87,12 +86,14 @@ export function useSoloMatch(opParam: string | null): MatchSession {
                 const weights = new Map(uniqueModels.map((_, i) => [list[i].arm, list[i]]));
                 const match = new SoloMatch(seed, ids, weights, readEnvConfig());
                 const tracker = new ViewTracker(match);
-                tracker.update(); // 排队态先更新一次 → 发出 waitBirth（默认配置下排队恒为 1 刻：
-                // 初始池均值 ≥ 150−80 = 70 > 预滚上限 20，玩家必在第 1 刻出生，无中间出生可漏）
-                match.start();
+                tracker.update(); // 排队态先更新一次 → 发出 waitBirth
+                // v2.5 随机到达（用户 2026-11-01）：排队期可跨多刻——逐刻 tracker.update()
+                //（ViewTracker 契约"每刻至少一次"；出生刻的 birthSelf 亦经此路径处理。
+                // 旧"排队恰 1 刻"假设已失效——跳刻会漏事件）
+                match.start(() => tracker.update());
                 matchRef.current = match;
                 trackerRef.current = tracker;
-                setState({ status: "ready", view: tracker.update() }); // t0 结算 → birthSelf
+                setState({ status: "ready", view: tracker.update() }); // 出生刻结算 → birthSelf
             } catch (err) {
                 // 模型 404 等 → 回 /solo（与非法参数同路）
                 console.error("[darkforest] match setup failed", err);
@@ -114,7 +115,7 @@ export function useSoloMatch(opParam: string | null): MatchSession {
     const advise = async (): Promise<Advice[]> => {
         const m = matchRef.current;
         if (m === null || m.playerSlot === null) return [];
-        for (const arm of ARM_IDS) {
+        for (const arm of MODEL_IDS) {
             if (!advisorWeights.current.has(arm)) {
                 try {
                     advisorWeights.current.set(arm, await loadModel(arm));
@@ -128,7 +129,7 @@ export function useSoloMatch(opParam: string | null): MatchSession {
         const obs = m.env.obs().subarray(p * OBS_DIM, (p + 1) * OBS_DIM);
         const valid = m.env.valid().subarray(p * N_ACTIONS, (p + 1) * N_ACTIONS);
         const out: Advice[] = [];
-        for (const arm of ARM_IDS) {
+        for (const arm of MODEL_IDS) {
             const w = advisorWeights.current.get(arm);
             if (w !== undefined) out.push({ arm, action: act(w, obs, valid) });
         }

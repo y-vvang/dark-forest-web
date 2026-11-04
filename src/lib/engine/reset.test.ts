@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { V24_CONFIG } from "./config";
+import { V25_CONFIG } from "./config";
 import { DarkForestEnv2 } from "./env";
 import { ScriptedRng } from "./rng";
 import { assertConservation } from "./snapshot";
@@ -11,7 +11,7 @@ import { assertConservation } from "./snapshot";
  */
 function makeEnv(queue: number[] = [], fill = 0.5, overrides = {}) {
     return new DarkForestEnv2(
-        { ...V24_CONFIG, ...overrides },
+        { ...V25_CONFIG, ...overrides },
         new ScriptedRng([...Array(72).fill(0.02), 1, 2, 3, 4, 10, 10, 10, 10, 12.5, ...queue], fill),
     );
 }
@@ -29,16 +29,18 @@ test("reset: initial cohort of 4, conservation, pending pre-roll (env2_v24.py:18
     expect([...env.spawn_tick.slice(4)].every((t) => t === 10 ** 9)).toBe(true);
     expect(env.t).toBe(0);
     expect([...env.last_action]).toEqual(new Array(36).fill(0)); // A_SILENT
+    expect([...env.under_attack]).toEqual(new Array(36).fill(0)); // v2.5：滑窗清零
+    expect([...env.last_invader]).toEqual(new Array(36).fill(-1)); // v2.5：无入侵者
     expect(env.obs).toBeDefined();
-    expect(obs.length).toBe(36 * 36); // v2.4：OBS_DIM 36
-    expect(valid.length).toBe(36 * 8); // v2.4：N_ACTIONS 8
+    expect(obs.length).toBe(36 * 38); // v2.5：OBS_DIM 38
+    expect(valid.length).toBe(36 * 8); // N_ACTIONS 8
     assertConservation(env); // 150 − 40 − 110 = 0
 });
 
 test("reset: budget overflow scales initial res (env2_v24.py:215-217)", () => {
     // 完整替换构造队列（makeEnv 是追加语义，此处需覆盖基础 81 值）
     const env = new DarkForestEnv2(
-        { ...V24_CONFIG },
+        { ...V25_CONFIG },
         new ScriptedRng([...Array(72).fill(0.02), 1, 2, 3, 4, 40, 40, 40, 40, 12.5]),
     );
     env.reset();

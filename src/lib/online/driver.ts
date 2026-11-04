@@ -40,6 +40,9 @@ export interface SeatRuntime {
     frozen: boolean;
     kills: number;
     loot: number;
+    /** 入席刻快照（assignBirths 捕获 env.spawn_tick）——v2.5 同刻复用会覆写槽位的
+     *  spawn_tick，死亡视图的 ticks 计算须用本快照（评审 Critical #2 纵深） */
+    spawnTick: number;
     /** birthSelf 在全日志中的下标（服务端日志投递的出生锚定——跳过预产噪声）。
      *  出生刻的首个 update 恰以 birthSelf 收尾（新生儿知识图为空、无其他可发条目），
      *  故 view.log.length − 1 即锚点。 */
@@ -57,8 +60,8 @@ export interface DriverState {
     readonly env: DarkForestEnv2;
     readonly weights: ReadonlyMap<string, ModelWeights>;
     readonly armRngs: Map<string, Rng>;
-    /** slot → ARM_ROTATION 索引（-1 = 人类/未出生） */
-    readonly seatArm: Int32Array;
+    /** slot → ARM_ROTATION 索引（-1 = 人类/未出生；v2.5 _grow 扩容时重分配） */
+    seatArm: Int32Array;
     /** token → 出生槽位（重演推导；与 rec.seats 漂移即抛） */
     readonly tokenSlot: Map<string, number>;
     /** token → 席位运行时（含未出生排队者——追 birthSelf 转移） */
@@ -121,6 +124,7 @@ export function ensureRuntime(state: DriverState, token: string): SeatRuntime {
             frozen: false,
             kills: 0,
             loot: 0,
+            spawnTick: -1,
             birthLogIndex: null,
         };
         state.runtimes.set(token, rt);
@@ -230,12 +234,19 @@ function beginNextTick(state: DriverState, rec: WorldRecord, k: number): void {
     const actions = Int32Array.from(state.stash ?? new Int32Array(n)); // 拷贝防 env 持有
     const targets = new Int32Array(n).fill(-1);
 
-    // 人类一选：窗口 k 的提交（entry ticks[k-1]；k=0 即 spawn，无）
+    // 人类一选：窗口 k 的提交（entry ticks[k-1]；k=0 即 spawn，无）。
+    // **死者提交剔除**（评审 I-2）：上一刻 died_this_tick 槽位的条目全部来自死者
+    //（新住客经同刻复用在刻 k 的 resolve 后才入座——其在窗 k 无提交机会），而
+    // alive/seatArm 两道旧防御对"复用给新人类"的槽全部通过 → 死者遗留提交会劫持
+    // 新住客的首刻行动。记录不动（消费期守卫，重演同构）。
     const entry = k >= 1 ? rec.ticks[k - 1] : null;
+    const diedLast = state.lastResult;
     if (entry) {
         for (const [slotStr, [action, target]] of Object.entries(entry.nextActions)) {
             const slot = Number(slotStr);
             if (!env.alive[slot] || state.seatArm[slot] >= 0) continue; // 死席陈旧提交/AI 席防御
+            if (diedLast !== null && diedLast.info.died_this_tick.some(([v]) => v === slot))
+                continue; // 上一刻死者槽（含同刻复用给新人类的槽）——提交作废
             actions[slot] = action;
             targets[slot] = target;
         }
@@ -294,26 +305,52 @@ function settleTick(state: DriverState, rec: WorldRecord, k: number): void {
         re[Number(slotStr)] = action;
     }
     const result = env.resolve(re);
+    syncGrowth(state); // v2.5 _grow：resolve 阶段 10 刻内扩容后同步定长数组
     state.lastResult = result;
     state.resolvedTicks = k;
     state.inFlightInvaders = new Map();
     state.rePartial = null;
     accumulateStats(state, result);
-    assignBirths(state, rec);
+    // **先判死后入席**（v2.5 同刻复用）：assignBirths 可能把新 token 座上本刻死亡的
+    // 复用槽——顺序颠倒会把新住客幻影判死。processDeaths 走 died_this_tick 事件流 +
+    // 入席快照，二者皆对复用覆写免疫。
     processDeaths(state, result);
+    assignBirths(state, rec);
     if (env.done) markWorldEnd(state);
 }
 
-/** 击杀/缴获累计（solo finishTick 模式：strike_events/invasions/loot_to） */
+/**
+ * v2.5 `_grow` 适配：resolve 的阶段 10 可能在刻内扩容（全员存活 + 池可负担——
+ * 实验从未触发，游戏配置面板可调大预算故可达）。驱动器的定长数组须同步：新槽
+ * seatArm=-1（未分配；本刻出生的新住客由随后的 assignBirths 指派）、暂存 stash
+ * 补 SILENT（新住客首刻静默，与普通出生的 stash 时序一致）。
+ */
+function syncGrowth(state: DriverState): void {
+    const env = state.env;
+    if (state.seatArm.length >= env.n) return;
+    const seatArm = new Int32Array(env.n).fill(-1);
+    seatArm.set(state.seatArm);
+    state.seatArm = seatArm;
+    if (state.stash !== null) {
+        const stash = new Int32Array(env.n); // SILENT 基底
+        stash.set(state.stash);
+        state.stash = stash;
+    }
+}
+
+/** 击杀/缴获累计（solo finishTick 模式：strike_events/invasions/loot_to）。
+ *  死者运行时跳过（评审 M-2）：v2.5 复用使死者 playerSlot 指向共享槽——若不短路，
+ *  新住客的击杀/缴获会泄入死者的定格读数（本刻刚死者 end 尚未置位，其自身最后一
+ *  刻的战果仍正常计入——processDeaths 在本函数之后）。loot_to 长度守卫同评审 I-1。 */
 function accumulateStats(state: DriverState, result: TickResult): void {
     for (const rt of state.runtimes.values()) {
         const p = rt.host.playerSlot;
-        if (p === null) continue;
+        if (p === null || rt.host.end !== null) continue;
         for (const ev of result.info.strike_events)
             if (ev[0] === p && ev[2] === "killed") rt.kills++;
         for (const inv of result.info.invasions)
             if (inv[0] === p && !inv[2]) rt.kills++;
-        rt.loot += result.info.loot_to[p];
+        rt.loot += p < result.info.loot_to.length ? result.info.loot_to[p] : 0;
     }
 }
 
@@ -339,6 +376,7 @@ function assignBirths(state: DriverState, rec: WorldRecord): void {
             if (rt === undefined) throw new Error(`driver: seated token ${token} missing runtime`);
             rt.host.playerSlot = slot;
             rt.host.phase = "awaiting-action";
+            rt.spawnTick = env.spawn_tick[slot]; // 入席即快照（同刻复用会覆写槽位值）
             state.seatArm[slot] = -1; // 人类席
         } else {
             state.seatArm[slot] = state.cursor % ARM_ROTATION.length;
@@ -358,13 +396,15 @@ function processDeaths(state: DriverState, result: TickResult): void {
     const env = state.env;
     for (const ev of result.info.died_this_tick) {
         const slot = ev[0];
-        const cause = ev[1];
+        // v2.5 同刻复用在事件流装配【前】清死因（env2_v25.py:340 vs :739）→ "" 抵达
+        // 上层，翻译为 cause.unknown（i18n 键 Phase 4 落地）
+        const cause = ev[1] === "" ? "unknown" : ev[1];
         for (const rt of state.runtimes.values()) {
             if (rt.host.playerSlot !== slot || rt.host.end !== null) continue;
             rt.host.end = {
                 kind: "dead",
                 cause,
-                ticks: env.t - env.spawn_tick[slot],
+                ticks: env.t - rt.spawnTick, // 槽位 spawn_tick 已被同刻复用覆写——用入席快照
                 kills: rt.kills,
                 loot: rt.loot,
             };
@@ -423,7 +463,8 @@ export function sprintDue(state: DriverState, rec: WorldRecord): boolean {
     if (open === undefined || open.endedAtMs !== null) return false;
     for (const rt of state.runtimes.values()) {
         const p = rt.host.playerSlot;
-        if (p !== null && state.env.alive[p]) return false; // 有存活人类 → 满时长
+        // v2.5：死人类的槽位可被复用（alive[p]=1 是新住客）——以运行时终局为准
+        if (p !== null && rt.host.end === null && state.env.alive[p]) return false; // 有存活人类 → 满时长
     }
     return state.queue.length === 0;
 }

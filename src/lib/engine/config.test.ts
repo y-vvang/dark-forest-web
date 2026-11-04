@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { V24_ARMS, V24_CONFIG } from "./config";
+import { V25_ARMS, V25_CONFIG } from "./config";
 import { N_ACTIONS, NEAR_K, OBS_DIM } from "./types";
 
-test("V24_CONFIG matches config_v24.yaml env section", () => {
-    expect(V24_CONFIG).toEqual({
+test("V25_CONFIG matches config_v25.yaml env section", () => {
+    expect(V25_CONFIG).toEqual({
         nAgents: 36,
+        nNorm: 36.0,
         world: 100.0,
         detectRadius: 30.0,
         tMax: 250,
@@ -45,14 +46,15 @@ test("V24_CONFIG matches config_v24.yaml env section", () => {
     });
     expect(N_ACTIONS).toBe(8);
     expect(NEAR_K).toBe(3);
-    expect(OBS_DIM).toBe(36);
+    expect(OBS_DIM).toBe(38); // v2.5：9 标量 + 8 one-hot + 3×7 近邻
 });
 
-test("V24_ARMS match runs/v24_arms/<arm>/config.yaml reward overrides", () => {
-    expect(V24_ARMS.a_classic).toEqual({});
-    expect(V24_ARMS.b_terminal).toEqual({ softsignRewardScale: 0.0, bdEntryPenalty: 0.0 });
-    expect(V24_ARMS.c_res).toEqual({ resRewardScale: 0.0025 });
-    expect(V24_ARMS.d_malintent).toEqual({ resRewardScale: 0.0025, attackReward: 0.5 });
-    for (const o of Object.values(V24_ARMS))
-        for (const [k, v] of Object.entries(o)) expect(V24_CONFIG[k as keyof typeof V24_CONFIG]).not.toBe(v);
+test("V25_ARMS match runs/v25_arms/<arm>/config.yaml reward overrides", () => {
+    expect(V25_ARMS.a_classic).toEqual({});
+    expect(V25_ARMS.b_terminal).toEqual({ softsignRewardScale: 0.0, bdEntryPenalty: 0.0 });
+    expect(V25_ARMS.c_res).toEqual({ resRewardScale: 0.0025 });
+    expect(V25_ARMS.d_malintent).toEqual({ resRewardScale: 0.0025, attackReward: 0.5 });
+    for (const o of Object.values(V25_ARMS))
+        for (const [k, v] of Object.entries(o))
+            expect(V25_CONFIG[k as keyof typeof V25_CONFIG]).not.toBe(v);
 });

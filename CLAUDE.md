@@ -23,8 +23,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 硬性规则（用户指定，违反=返工）
 
-1. **先理解后开发**：动任何游戏代码前，先读 `docs/env-model-v23.md`（已升版 v2.4）与
-   `docs/ai-opponents.md`；两文档与代码冲突时，以 `experiment/experiment/env2_v24.py` 为最终权威。
+1. **先理解后开发**：动任何游戏代码前，先读 `docs/env-model-v23.md`（已升版 v2.5）与
+   `docs/ai-opponents.md`；两文档与代码冲突时，以 `experiment/experiment/env2_v25.py` 为最终权威。
 2. **UI 先行**：先写 `DESIGN.md`（设计系统/视觉规范），确认后产出 HTML 原型，最后实现；
    样式全程保持一致。
 3. **UI 约束**：只用默认字体 + `monospace`；**不用 `<canvas>`**；克制使用动画，
@@ -60,12 +60,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 内容 | 权威来源 |
 |---|---|
-| 环境代码 | `experiment/experiment/env2_v24.py`（654 行，`DarkForestEnv2` 单类参数化；v2.3-fix 链 env2.py 原样保留） |
-| 环境参数 | `experiment/experiment/config_v24.yaml` + `experiment/runs/v24_arms/<臂>/config.yaml`（四臂 override） |
-| 回归锚 | `experiment/experiment/tests/test_strike_fix.py`（v2.3-fix，打击逻辑未变）+ `experiment/experiment/smoke_v24.py`（v2.4 冒烟） |
-| 已训练模型 | `experiment/runs/v24_arms/{a_classic,b_terminal,c_res,d_malintent}/run/seed42_main/checkpoint.npz`（各 600 回合自博弈，updates 149987；v2.3-fix 12 checkpoint 与现环境不兼容已退役） |
-| 评测产物 | `experiment/results/v24_arms/`（四臂 stage_b.json + summary.json） |
-| 实验结论 | `experiment/docs/experiment_report.md` 第七部分（v2.4）+ `experiment/reports/v24_arms_brief.md` |
+| 环境代码 | `experiment/experiment/env2_v25.py`（748 行，`DarkForestEnv2` 单类参数化；vs v2.4 diff 仅 104 插入/10 删除，resolve 主体逐字节相同；v2.4/v2.3-fix 链原样保留） |
+| 环境参数 | `experiment/experiment/config_v25.yaml` + `experiment/runs/v25_arms/<臂>/config.yaml`（四臂 override——臂值与 v2.4 相同） |
+| 回归锚 | `experiment/experiment/tests/test_strike_fix.py`（v2.3-fix，打击逻辑未变）+ `experiment/experiment/smoke_v25.py` / `smoke_v25b.py`（v2.5 冒烟 + v2b 启发式） |
+| 已训练模型 | `experiment/runs/v25_arms/{a_classic,b_terminal,c_res,d_malintent}/run/seed42_main/checkpoint.npz`（各 600 回合自博弈，updates 149987）+ `experiment/runs/v3/v30_champion/run/seed42_champion/checkpoint.npz`（league 1000ep，updates 249789）；v2.4 四臂（36 维 obs）与 v2.3-fix 12 checkpoint 均已退役 |
+| 评测产物 | `experiment/results/v25_arms/` + `results/v25_arms_h2/`（v2b 启发式 StageB）+ `results/v30_solo/`（v3.0 solo 评估器） |
+| 实验结论 | `experiment/docs/experiment_report.md` 第八至十部分（v2.5/v3）+ `experiment/reports/v25_brief.md` + `v30_brief.md` + `v32_brief.md` |
 
 - **2026-09-22 致命 bug**：v2.0–v2.3 旧环境"打击击杀只记事件、从不清除受害者 `alive` 标志"——
   被打击的文明实际存活。因此 `experiment/archive_incident_20260922/` 内**全部 v2.x 产物仅作事故档案**
@@ -73,10 +73,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   依据；报告第五部分就地保留但已作废。v1.x 数据不受影响（bug 自 v2 起）。
 - **文档与代码的已知出入（一律以代码为准）**：
   ① 文档称黑域"风窗期可被打击"，实际 `domain_windup` 同样免疫打击与入侵（风窗期只剩"可被探测"）；
-  ②（v2.4 已消解）v2.3 注释"obs=36"过时——v2.4 实为 7+8+21=**36**，注释与代码一致；
-  ③ `config_v24.yaml` 的 `develop_reward: 0.05` 未被 `resolve()` 使用（奖励走 `softsign_reward_scale`）；
+  ②（v2.4 已消解）v2.3 注释"obs=36"过时——v2.4 实为 7+8+21=**36**（v2.5 为 9+8+21=**38**）；
+  ③ `config_v25.yaml` 的 `develop_reward: 0.05` 未被 `resolve()` 使用（奖励走 `softsign_reward_scale`）；
   ④ `scripts/pipeline_v23_fix.sh` 注释"12 arms"实为 11 臂，且内含原沙箱硬编码路径（本机不可运行）；
-  ⑤ **近邻观测块**（2026-10-01 金标准回放发现；2026-10-11 v2.4 复核更新）：布局是
+  ⑤ **近邻观测块**（2026-10-01 金标准回放发现；2026-10-11 v2.4 复核更新；2026-11-01 v2.5 移位）：布局是
    **feature-major**——`np.concatenate(axis=-1)` 拼各 (n,3) 列组 → `[Δx×3, Δy×3, d×3, tech×3,
    res×3, public×3, in_domain×3]`（v2.4 索引自 15 起：15/18/21/24/27/30/33+k）；`big` 矩阵
    **不滤域内目标**（已知+存活的域内文明以真实几何进入，仅情报特征被 known_pair 掩蔽，
@@ -93,15 +93,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   分箱与 `stage_b.json`（150 ep）的存活率不可混用；sweep 短臂（150 ep）仅可相对比较；v2.x 为
   单训练种子（42），引用任何数字必须带此披露。
 
-## 环境模型速查（v2.4；完整移植规格见 docs/env-model-v23.md）
+## 环境模型速查（v2.5；完整移植规格见 docs/env-model-v23.md）
 
-- **世界**：[0,100)² **连续坐标**环面（"Grid"是历史名称，并非离散网格）；36 个**一次性**槽位
-  （出生槽不复用，单局最多 36 次出生；**在线多生命世界例外**：`ONLINE_ENV_CONFIG.slotReuse`
-  使 36 槽耗尽后复用已死槽——对实验的明示偏离，缺省世界保持忠实，2026-10-14）；定长 250 刻结算；资源总预算 150 逐刻守恒
+- **世界**：[0,100)² **连续坐标**环面（"Grid"是历史名称，并非离散网格）；36 个初始槽位，
+  **v2.5 三级出生**（未生槽 → **死槽复用**——同刻死者即可复用、社会态全清（含 under_attack；
+  last_invader 与 pending_reveal 不清——忠实 quirk）→ `_grow` 满员扩容（n 翻倍；上游
+  last_action 覆盖 bug 以 Q16 明示偏离修复））；定长 250 刻结算；资源总预算 150 逐刻守恒
   （`总量 − Σ存活资源 − 自由池 ≡ 0`，以 info 字段报告残差而非 assert）。
 - **出生**：初始 4 文明（tech 恒 =tech_spawn_lo=1.0、res~U[5,20] 超预算则按比例缩放）；此后恒有
-  **一个**预滚的下次出生资源 U[5,20]，自由池攒够即诞生（每刻至多 1 个、取最靠前空槽）。**v2.4
-  无科技继承**：出生科技恒 1.0（同起跑线；v2.3 的 P25–P75 抽取已删，每出生少消耗 1 个 RNG 值）。
+  **一个**预滚的下次出生资源 U[5,20]，自由池攒够即诞生（每刻至多 1 个、三级槽偏好）。**v2.4 起
+  无科技继承**：出生科技恒 1.0（同起跑线）；**v2.5：每次出生 `peak_tek[slot]=tech[slot]`（逐代
+  峰值重置）**。
 - **动作（10 个，枚举序）**：
 
 | # | 动作 | 门槛 | 时机 | 效果 |
@@ -128,10 +130,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   （反咬互毁+掠夺）→ 观测（显式目标）→ 发展/爆炸 → 流失/饿死 → 尸体结算 → 奖励 → 内生出生 → t+=1。
 - **终止**：t≥250，或热寂（全灭且自由池 < 下次预滚额）。无"最后幸存者即胜"判定——独存活者也要
   走满 250 刻；玩家目标是**活到终局**。
-- **观测（36 维）**：7 自身标量（log1p(tech)/log1p(50)、res/20、已知存活数/(n−1)、存活占比、
-  t/t_max、in_domain、windup）+ 8 上刻动作 one-hot + 3 个最近已知存活文明 × 7
+- **观测（38 维，v2.5）**：9 自身标量（log1p(tech)/log1p(50)、res/20、
+  clip(已知存活数/n_norm)、clip(存活数/n_norm)——**v2.5 固定分母 n_norm=36 并 clip[0,2]**、
+  t/t_max、in_domain、windup、**under_attack（v2.5 被入侵滑窗）**、**self_public（v2.5 自知
+  已公开）**）+ 8 上刻动作 one-hot + 3 个最近已知存活文明 × 7
   （Δx/50、Δy/50、d/50、log1p(tech) 或 −1、res/20 或 −1、public、in_domain 恒 0）；
-  feature-major 布局（索引 15/18/21/24/27/30/33+k）；死亡行整行清零；float32；
+  feature-major 布局（索引 17/20/23/26/29/32/35+k）；死亡行整行清零；float32；
   **候选不足 3 时掩码行特征 = argsort 第 k 位文明的旗标（Q13，numpy-sort.ts 逐位复刻）**。
 - **驱动 API（两阶段 tick，无 step()）**：`select_targets(actions)` → `begin_tick(actions, targets)`
   （入侵者**当场**暴露给受害者）→ 受害者重选（人类玩家的关键交互点：被入侵时获得通知并重新决策；
@@ -142,26 +146,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## AI 对手资产（完整规格见 docs/ai-opponents.md）
 
-- **DQN**：纯 numpy MLP **[36,64,64,8]**（ReLU 隐层、He 初始化、线性输出，float64；维度自权重
-  推导）。checkpoint（npz = 无压缩 ZIP 内嵌 .npy v1.0）键：`online__W0/b0/W1/b1/W2/b2` +
-  `updates`（四臂均 149987）。推理 = 前向 + 合法动作掩码 argmax（ε 探索同样只在合法动作内）；
-  评测口径 ε=0.05（stage_b_v24）；参谋路径 `dqn.act` ε=0 零 RNG。
-- **可用 checkpoint 共 4 个**（仅 v2.4 奖励臂，`experiment/runs/v24_arms/<臂>/run/seed42_main/`）：
-  `a_classic`（无覆盖）/ `b_terminal`（soft 0、bd 0）/ `c_res`（+res 0.0025）/
-  `d_malintent`（c + attack 0.5）。⚠️ v2.3-fix 的 12 个（38 维 obs/10 动作）与档案内 v2.0–v2.2s
-  均不兼容，已从游戏对手目录退役。
-- **预制策略**（`experiment/experiment/train2_v24.py:40-52`，各运行器共享同一实现）：
-  - `random`：合法动作均匀随机（v2.4 合法集含揭露）；
-  - `df`：STRIKE 一合法即打 → 30% OBSERVE → 60% DEVELOP 否则 SILENT；目标按 **stage_b_v24 口径**：
-    INVADE 选候选最弱（安全猎杀）、其余目标动作选候选最强（"诅咒领跑者"）；
-  - `pacifist`：50% DEVELOP 否则 SILENT，永不攻击。
-- **stage_b_v24 口径**：36 槽 learner/random/df/pacifist 各 9（env seed 21001、agent seed 1001、
-  ε=0.05、150 ep）；分层变量 = **peak_tech**（earned tech；无继承后 spawn_tech 退化）。
-- **权威结论数字**（引用须带单种子 42 + 150ep 披露；v2.4 池生态反转）：pacifist 0.51–0.58 **四臂
-  全居首** > df 0.46–0.52 > learner 0.30–0.48（a 0.478 / b 0.342 / c 0.376 / d 0.296）> random
-  0.05–0.07；learner 全臂零打击（牙齿=揭露+入侵）：a 静默 0.62+种田 0.36；b 纯静默 0.82；c 掠夺流
-  入侵 11.1/ep loot 59.5；d 信息战揭露 0.181。earned-tech 分层 high 0.83–0.92 ≫ low 0.13–0.18
-  （发展优势从"出生特权"变为"努力回报"）。跨版本数字不可比（机制+参数双重变化）。
+- **DQN**：纯 numpy MLP **[38,64,64,8]**（ReLU 隐层、He 初始化、线性输出，float64；维度自权重
+  推导——v2.5 (38,64) 与潜在宽网同码可用）。checkpoint（npz = 无压缩 ZIP 内嵌 .npy v1.0）键：
+  `online__W0/b0/W1/b1/W2/b2` + `updates`（四臂 149987；champion 249789）。推理 = 前向 + 合法
+  动作掩码 argmax（ε 探索同样只在合法动作内）；评测口径 ε=0.05（stage_b_v25b）；参谋路径
+  `dqn.act` ε=0 零 RNG、遍历五模型（MODEL_IDS）。
+- **可用 checkpoint 共 5 个**（v2.5，`experiment/runs/v25_arms/<臂>/run/seed42_main/` 四臂 +
+  `runs/v3/v30_champion/run/seed42_champion/` champion）。⚠️ v2.4 四臂（36 维 obs）与 v2.3-fix
+  的 12 个（38 维 obs/10 动作）均不兼容，已从游戏对手目录退役。
+- **预制策略 = v2b**（`experiment/experiment/stage_b_v25b.py:35-71`，用户 2026-11-01 裁定跟随
+  实验更新；游戏与金标准录制器同用此版锁奇偶）：
+  - `random`：合法动作均匀随机（不变——无信息对照）；
+  - `df`：STRIKE 一合法即打 → 30% OBSERVE → **反咬：under_attack 且可入侵且 last_invader≥0
+    → INVADE（目标二选 last_invader∈候选）** → 60% DEVELOP 否则 SILENT；其余目标动作
+    INVADE 选候选最弱、余选最强；
+  - `pacifist`：**藏匿：under_attack 或 public → 黑域（门未过回退静默）；域内/藏匿期恒静默**；
+    未受威胁 50/50 DEVELOP/SILENT，永不攻击。
+- **stage_b_v25b 口径**：36 槽 learner/random/df/pacifist 各 9（env seed 21001、agent seed 1001、
+  ε=0.05、150 ep）；**逐代统计**（死槽复用使一槽多代，出生刻重置计数）；分层 = peak_tech。
+- **权威结论数字**（引用须带单种子 42 + 150ep 披露；v2.5 与 v2.4 口径不同——逐代存活，不可比）：
+  pacifist 仍四臂全居首（0.607–0.672，v2b StageB）；**学习者对 under_attack/self_public 新状态
+  零利用**（−3.1~0pp——"信息完备≠策略完备"）；复用"遗忘效应"使 random 生存 0.05→0.28–0.39；
+  d 臂揭露流 0.181→**0.807**（唯一正收益臂）。**v3.0 champion（league 训练：12 learner + 24
+  对手/回合从 7 类池重抽）**：对 random 0.584 / pacifist 0.538 / df 0.484，但**输给全部四臂**
+  （0.312–0.360）——"最能打"未达成（v3.2 裁定结构性不可达）；剩余价值 = **"见过所有策略家族的
+  泛化体"**（游戏 AI 居民：多样但不统治）。
 
 ## 常用命令
 
@@ -177,17 +186,17 @@ PYTHONUTF8=1 python3 smoke_v24.py                           # v2.4 冒烟
 # v2.3-fix 历史链（env2.py/train2.py/stage_b.py）原样保留，勿在游戏侧引用
 # ⚠️ scripts/pipeline_v23_fix.sh 内含原沙箱硬编码绝对路径（/home/z/...），本机不可直接运行，仅作历史脚本
 
-# 游戏（仓库根，bun；已验证 2026-10-11 v2.4 同步轮）
+# 游戏（仓库根，bun；已验证 2026-11-01 v2.5 同步轮）
 bun run dev        # 开发服务器
 bun run build      # 生产构建（/ 等页面静态预渲染 + 4 个 /api/online/* 路由动态）
 bun run check      # typegen + eslint + tsc --noEmit（zh 词典完整性由 tsc 编译保证）
-bun test           # 全部测试（引擎金标准回放/argsort 矢量 + 对手奇偶 + 单机会话/感知/门 parity/奖励/配置 + 在线层记录/驱动/窗口机器/服务；214 用例 ~1.4s）
+bun test           # 全部测试（引擎金标准回放/argsort 矢量 + 对手奇偶 + 单机会话/感知/门 parity/奖励/配置 + 在线层记录/驱动/窗口机器/服务；226 用例 ~2s）
 bun run purge:online  # 手动清 Upstash 在线命名空间 df:online:*（dev 卫生；产线世界持久永不清）
 
-# 金标准与模型资产的再生成（开发期 Python，只读引用 experiment/ 的 *_v24 模块）
-PYTHONUTF8=1 python3 scripts/golden/record_golden.py        # 7 轨迹 + stats.json → src/lib/engine/testdata/
-python3 scripts/golden/convert_models.py                   # 4 臂 npz → public/models/*.json（immutable 长缓存）
-python3 scripts/golden/record_dqn_outputs.py               # 4 模型前向奇偶数据 → testdata/dqn-outputs.json
+# 金标准与模型资产的再生成（开发期 Python，只读引用 experiment/ 的 *_v25 模块）
+PYTHONUTF8=1 python3 scripts/golden/record_golden.py        # 7 轨迹 + stats.json → src/lib/engine/testdata/（v2b 启发式 + v25 臂）
+python3 scripts/golden/convert_models.py                   # 5 模型 npz → public/models/*.json（四臂 + champion；immutable 长缓存）
+PYTHONUTF8=1 python3 scripts/golden/record_dqn_outputs.py  # 5 模型前向奇偶数据 → testdata/dqn-outputs.json
 # 轨迹自带 meta.cfg（奖励臂轨迹用其训练参数录制）；argsort 平局序矢量 = testdata/argsort-vectors.json
 # 口径与容差披露见 src/lib/engine/testdata/README.md（缺陷史 + Q13 掩码行伪影 + TS-only rewardDetail）
 ```
@@ -199,12 +208,13 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 1. **test_strike_fix 等价**：10 种子 × {击杀置死+死因=strike、守恒残差≈0、护盾比≥2 精确挡下}
    在 TS 中复现。
 2. **守恒不变量**：每刻 `总量 − Σ存活资源 − 自由池 ≡ 0`（|残差|≤1e-6），对局全程断言。
-3. **金标准回放**（已落地）：`scripts/golden/record_golden.py` 录制 env2_v24 每次 RNG 调用 +
-   逐刻全状态快照（7 轨迹，含 d 臂奖励参数路径）→ TS `ReplayRng` 逐条断言消耗序后重演 →
-   全状态/obs/info/rewards 精确比对 + 守恒全程 + `assertExhausted`。**v2.4 增补**：近邻块 argsort
+3. **金标准回放**（已落地）：`scripts/golden/record_golden.py` 录制 env2_v25 每次 RNG 调用 +
+   逐刻全状态快照（7 轨迹，含 d 臂奖励参数路径；**v2.5 重录 2026-11-01——trace-main-d 159 次
+   出生重度行使死槽复用**）→ TS `ReplayRng` 逐条断言消耗序后重演 →
+   全状态/obs/info/rewards 精确比对 + 守恒全程 + `assertExhausted`。近邻块 argsort
    平局序逐位复刻（numpy-sort.ts + 2005 矢量）；轨迹 meta.cfg 自带 env 参数。游戏运行时用
    自身 RNG（sfc32）+ 固定种子复现单局。
-4. **info 事件流**字段语义与 `env2_v24.py` `resolve()` 返回完全一致（游戏 UI 以此渲染）。
+4. **info 事件流**字段语义与 `env2_v25.py` `resolve()` 返回完全一致（游戏 UI 以此渲染）。
 5. 移植时的已知quirk清单见 `docs/env-model-v23.md` §0（含出生站位拒绝采样读取旧位置、
    广播者 known[j,j] 自知、近邻块 in_domain 特征恒 0 等——影响 obs 逐位一致，须照抄）。
 
@@ -230,37 +240,47 @@ TS 环境移植完成的判定标准（全部通过才可接 UI）：
 2. `DESIGN.md`（v0.2 完成 2026-09-30；2026-10-09/10-10 UX 轮 + v2.4 词汇/组件规格增补）→
    3. HTML 原型（**已完成 2026-09-30**）→ 4. 对手接入（**已完成 2026-10-02**；v2.4 化 2026-10-11：
    DQN 4 臂前向奇偶 + 预制 8 动作集 + 单机会话与感知过滤含揭露规则⑫）→
-5. 在线模式（**已完成 2026-10-14**：共享世界 + 排队 + 轮询——tick-in-flight 时序（beginTick 开窗/resolve 关窗）、确定性重演持久化（记录只存人类输入）、Upstash Redis 存储（EVAL 原子 CAS/锁、心跳独立键）、服务端感知过滤（view.ts 适配器复用）、四臂轮替 AI 居民、追赶/心跳剪除/世界滚动；机制文档 `docs/online-architecture.md`）。2026-10-14
+5. 在线模式（**已完成 2026-10-14**：共享世界 + 排队 + 轮询——tick-in-flight 时序（beginTick 开窗/resolve 关窗）、确定性重演持久化（记录只存人类输入）、Upstash Redis 存储（EVAL 原子 CAS/锁、心跳独立键）、服务端感知过滤（view.ts 适配器复用）、AI 居民轮替、追赶/心跳剪除/世界滚动；机制文档 `docs/online-architecture.md`）。2026-10-14
    round-2（用户裁定：AI 一等公民/多次进出重排）：**无快进**（刻长恒定，仅无人且队空惰性冲刺）、
-   行动格执行钮移除（选择即提交 + 刻末 2s 安全网，silent 未提交不发包）、**槽复用**
-   （`ONLINE_ENV_CONFIG.slotReuse`——对 v2.4 的明示偏离，缺省关闭保金标准忠实；tracker
-   感知缓存随 known 列重置清除）、**死席再排队 = 每命一新 token**（服务端换发，配对档案恒一致）→
+   行动格执行钮移除（选择即提交 + 刻末 2s 安全网，silent 未提交不发包）、
+   **死席再排队 = 每命一新 token**（服务端换发，配对档案恒一致）。
+   **2026-11-01 v2.5 同步轮**（用户裁决四项 + 既定 Ruling）：死槽复用为 env 缺省（原 slotReuse
+   偏离条款消解——同刻复用/驱动加固见 online-architecture.md §7）；AI 居民五席轮替（+champion）；
+   被入侵重选 = **动作格重选模式**（警报模态退役——任意动作 ∪ 反咬项，协议放宽
+   {-1}∪[0,8)、ConsoleView.rechoice 退出判据）；单机**随机到达出生**（arrivalTick =
+   1+floor(u·tMax)，seedOf "arrival" 新域）→
 6. Vercel 部署与缓存策略（`/models/*` immutable 头已就位；在线 API 已是 force-dynamic + no-store，待整体部署验证：Upstash env 在 Vercel 配置、函数时限内冷重演 ~0.5s）。
 每阶段完成后更新 CLAUDE.md 的命令与状态。
 
-落地备忘（2026-09-30 原型阶段；2026-10-02 机制阶段；2026-10-11 v2.4 同步轮；2026-10-14 在线模式轮）：
+落地备忘（2026-09-30 原型阶段；2026-10-02 机制阶段；2026-10-11 v2.4 同步轮；2026-10-14 在线模式轮；2026-11-01 v2.5 同步轮）：
 
 - **游戏机制分层**（docs/game-mechanics.md §1）：`src/lib/engine/`（纯 TS 环境，零 React；
   numpy-sort.ts = argsort 逐位移植）→ `src/lib/opponents/`（dqn.ts 前向+actBatch+act /
-  presets.ts / catalog.ts 合并目录）→ `src/lib/solo/`（match.ts 会话状态机 + view.ts 感知过滤 +
+  presets.ts（**v2b**——state 参数 + presetStateOf 助手）/ catalog.ts 合并目录 + MODEL_IDS
+  （参谋遍历源））→ `src/lib/solo/`（match.ts 会话状态机 + view.ts 感知过滤 +
   rewards.ts 奖励组合 + cfg-io.ts 配置 IO + gates.ts 门理由 + client.ts 装配）。
   **Rng 为构造期注入**（env 不持有种子）：GameRng=运行时 sfc32、ScriptedRng=单测脚本值
   （原样返回，非缩放）、ReplayRng=金标准回放。种子派生 `seedOf(S, domain)`（splitmix64）：
-  domain ∈ "env" / "session"（预制共享流，stage_b 口径）/ "model:" + arm。
-  座位约定：初始 4 席 = 对手光标 0..3；**首个内生出生 = 玩家**（出生序 4）；此后继续光标循环。
+  domain ∈ "env" / "arrival"（**v2.5 到达刻单抽**）/ "session"（预制共享流，stage_b 口径）/
+  "model:" + arm。座位约定（v2.5 随机到达制）：初始 4 席 = 对手光标 0..3；**玩家 = 首个
+  birth_tick ≥ arrivalTick 的内生出生**（arrival=1 即旧"首个内生出生"；到达前出生 = 对手光标席）。
 - **UI 只可消费 view.ts 视图模型**（MatchView）：感知过滤（严格忠实口径，规则表 game-mechanics.md
-  §7——他人间交锋/被观测反曝光/被打击幸存/**被揭露**均不渲染，规则①-⑫）在 ViewTracker 内完成，**组件层禁止直读
-  env/SoloMatch**。ViewTracker 契约：每刻至少一次 update()。日志 `params.cause` 携带 cause.* 键名，
-  由 EventLog 嵌套翻译。
-- **在线模式分层**（2026-10-14，docs/online-architecture.md）：`src/lib/online/`（record/driver/hub/service/store（memory+upstash）/http/server/use-online-world）+ `src/app/api/online/{queue,state,action,rechoice}`。世界记录**只存人类输入**（种子+逐刻提交/重选+花名册+**加入时刻**+配对），载入全量重演（AI 动作确定性推导）；锁/键/心跳见架构文档 §3；驱动测试接缝 = afterResolve（resolve 后、beginTick 前）与 stashBasisTick（决策基线）。
-- **模型资产**：`public/models/<arm>.json`（**v2.4 四臂**：a_classic/b_terminal/c_res/d_malintent，
-  npz 预转换，Python float repr↔JSON.parse 逐位往返），next.config 已挂 immutable 长缓存，运行时
-  按需 fetch。`/match?op=<逗号分隔 id>`（预制 3 + 臂 4 **合并单一列表**，2026-10-10 用户修订——
-  对手卡内联动作画像、无 popover、无胜率），非法参数/加载失败 → replace /solo。
-- **环境配置（2026-10-10 用户需求）**：`/solo` 开局前可配置世界常量（`cfg-io.ts` 精选 25 参数 +
-  出生科技；默认恒 = config_v24，改动即明示偏离）；差集经 sessionStorage 传递，读取端钳制 +
+  §7——他人间交锋/被观测反曝光/被打击幸存不渲染；**v2.5 ⑫ 翻转：被揭露自知已公开（log.revealed
+  + 白环）但不知揭露者**，规则①-⑫）在 ViewTracker 内完成，**组件层禁止直读
+  env/SoloMatch**。ViewTracker 契约：每刻至少一次 update()（v2.5 多刻排队经 start 回调逐刻满足）。
+  日志 `params.cause` 携带 cause.* 键名，由 EventLog 嵌套翻译（v2.5 增 cause.unknown——
+  同刻复用清死因兜底）。
+- **在线模式分层**（2026-10-14，docs/online-architecture.md；v2.5 加固 2026-11-01）：`src/lib/online/`（record/driver/hub/service/store（memory+upstash）/http/server/use-online-world）+ `src/app/api/online/{queue,state,action,rechoice}`。世界记录**只存人类输入**（种子+逐刻提交/重选（v2.5 任意动作）/花名册+**加入时刻**+配对），载入全量重演（AI 动作确定性推导；driver 含 syncGrowth/_grow 适配 + processDeaths 先于 assignBirths + spawnTick 快照——同刻复用加固）；锁/键/心跳见架构文档 §3；驱动测试接缝 = afterResolve（resolve 后、beginTick 前）与 stashBasisTick（决策基线）。
+- **模型资产**：`public/models/<id>.json`（**v2.5 五模型**：a_classic/b_terminal/c_res/d_malintent
+  + champion，npz 预转换，Python float repr↔JSON.parse 逐位往返），next.config 已挂 immutable
+  长缓存，运行时按需 fetch。`/match?op=<逗号分隔 id>`（预制 3 + 模型 5 **合并单一列表**，
+  2026-10-10 用户修订——对手卡内联动作画像、无 popover、无胜率），非法参数/加载失败 →
+  replace /solo。
+- **环境配置（2026-10-10 用户需求；v2.5 增说明文字）**：`/solo` 开局前可配置世界常量
+  （`cfg-io.ts` 精选 25 参数 + 出生科技；默认恒 = config_v25，改动即明示偏离；面板总述 +
+  七组说明文案 `solo.config.g.*.desc`，2026-11-01）；差集经 sessionStorage 传递，读取端钳制 +
   忽略未知键；SoloMatch 构造注入 cfg。**奖励展示**（配置流 + 四臂固定参数对比）与**模型参谋**
-  （四臂 greedy 零 RNG；用过即终局披露）走 `TickResult.rewardDetail`（TS-only 诊断，不进 info、
+  （五模型 greedy 零 RNG；用过即终局披露）走 `TickResult.rewardDetail`（TS-only 诊断，不进 info、
   不参与 parity）与 `dqn.act`；机制见 game-mechanics.md §7.1。
 - useSearchParams 必须包 Suspense 外壳（Next 16 预渲染；/match 的 MatchConsole 模式）。
 - 组件层标记类型 = **CivLike**（marker.tsx 定义）：MockCiv 已退役；/online 大厅 mock 亦随在线真实接线退役（2026-10-14）——

@@ -1,12 +1,12 @@
 /**
  * 行动门理由（纯函数，自 action-grid 抽出）——给 UI 展示"为何禁用"。
- * 权威：env `valid()`（V24_CONFIG 各 gate）；parity 测试锁定 gateOf 禁用 ⊆ env 无效。
+ * 权威：env `valid()`（V25_CONFIG 各 gate）；parity 测试锁定 gateOf 禁用 ⊆ env 无效。
  * gateOf 只覆盖可静态解释的门（tech/已知性）；env 额外的无效化（域/风窗行、目标已死等）
  * 由会话层传入的 valid[] 表达，不在此重复。
  * v2.4：删 strikeWeak/strikeStrong（动作已退役）；新增 reveal（BROADCAST_OTHER 揭露，
  * 需已知存活非域目标 + 广播门）。
  */
-import { V24_CONFIG, type EnvConfig } from "@/lib/engine/config";
+import { V25_CONFIG, type EnvConfig } from "@/lib/engine/config";
 import type { MessageKey, TParams } from "@/i18n";
 
 export type ActionId =
@@ -22,7 +22,7 @@ export type ActionId =
 export type Block = { reason: MessageKey; params?: TParams } | null;
 
 /**
- * env gates 按 env 自身的检查顺序求值。cfg 缺省 = V24_CONFIG（parity 测试口径）；
+ * env gates 按 env 自身的检查顺序求值。cfg 缺省 = V25_CONFIG（parity 测试口径）；
  * 环境常量可配置（2026-10-10）后 UI 传会话 cfg——理由文字与实际门槛一致。
  */
 export function gateOf(
@@ -30,7 +30,7 @@ export function gateOf(
     tech: number,
     res: number,
     hasKnown: boolean,
-    cfg: EnvConfig = V24_CONFIG,
+    cfg: EnvConfig = V25_CONFIG,
 ): Block {
     switch (id) {
         case "broadcast":

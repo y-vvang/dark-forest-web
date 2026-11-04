@@ -51,8 +51,8 @@ test("seats: initial four arms; queue FIFO births; AI rotation past the roster",
     expect(st.tokenSlot.get("tokA")).toBe(4); // 刻 1 出生（FIFO 队首）
     expect(st.tokenSlot.get("tokB")).toBe(5);
     expect(st.tokenSlot.get("tokC")).toBe(6);
-    expect(st.seatArm[7]).toBe(0); // 刻 4：花名册尽 → 轮替回 a_classic
-    expect(st.seatArm[8]).toBe(1); // 刻 5 → b_terminal
+    expect(st.seatArm[7]).toBe(4); // 刻 4：花名册尽 → 轮替 champion（v2.5 五席：4 臂 + champion）
+    expect(st.seatArm[8]).toBe(0); // 刻 5 → 回 a_classic
     expect(st.queue).toEqual([]);
     expect(st.resolvedTicks).toBe(5);
 });
@@ -64,8 +64,8 @@ test("join ordinal: mid-joined token is not popped at earlier historical births"
     rec.joinedAt["tokA"] = 2; // tokA 在两次出生之后加入 → 只应吃第三次出生
     const st = drive(rec, { envFill: QUIET });
     expect(st.tokenSlot.get("tokA")).toBe(6); // 第三次出生 = slot 6（4、5 归 AI 轮替）
-    expect(st.seatArm[4]).toBe(0); // 初始四臂后的第一次轮替
-    expect(st.seatArm[5]).toBe(1);
+    expect(st.seatArm[4]).toBe(4); // 初始四臂后的第一次轮替 → champion（五席轮替）
+    expect(st.seatArm[5]).toBe(0); // 第二次 → 回 a_classic
     expect(st.seatArm[6]).toBe(-1); // 人类席
 });
 
@@ -112,11 +112,11 @@ test("reuse: reborn civ re-detected gets a fresh contact (perception caches drop
     expect(st.env.spawn_tick[0]).toBe(4); // 复用出生记 t+1=4（刻 4 结算时 env.t=3）
 });
 
-test("same-tick death does not reuse the dead slot (death survives; no phantom runtime)", () => {
-    // 轮次 2 评审 Critical #2：复用候选扫描在 resolve 阶段 10——本刻刚死的槽已
-    // alive=0，若恰为最小已死槽且池够（尸体刚入池），同刻即复用：死因被 reuseSlot
-    // 抹空、driver processDeaths 读到新住客 alive=1 → 死者 end 永不置位（幻影
-    // 席位共享），后续重演可致世界砖化。修复 = 出生扫描跳过同刻死者（deadNow）。
+test("same-tick death recycles the dead slot immediately (v2.5) — death survives, no phantom runtime", () => {
+    // v2.5 语义（env2_v25.py:329-331）：本刻刚死的槽即复用候选（无 deadNow 跳过——
+    // 2026-10-14 游戏侧"推迟一刻"偏离随实验采纳复用而消解）。配套三重防线：
+    // processDeaths 走 died_this_tick 事件流 + 入席 spawnTick 快照（复用覆写免疫）
+    // + 先判死后入席（新住客不被幻影判死）；死因被同刻复用清除 → unknown 兜底。
     const rec = bootRecord(["tokA", "tokB", "tokC"], 4);
     rec.ticks[1].nextActions["5"] = [6, 4]; // 窗 2 → 刻 3：tokB 入侵 tokA
     const st = drive(rec, {
@@ -125,7 +125,7 @@ test("same-tick death does not reuse the dead slot (death survives; no phantom r
             if (k === 2) {
                 s.env.known[5 * 36 + 4] = 1; // tokB 知 tokA（入侵门）
                 // 耗尽全部未生槽：6..35 伪装"已生在世"，tokA 的槽 4 成为唯一
-                //（本刻将死的）最小已死槽；池 ≥ 预滚额 → 阶段 10 触发复用路径
+                //（本刻将死的）最小已死槽；池 ≥ 预滚额 → 阶段 10 同刻复用
                 for (let i = 6; i < 36; i++) {
                     s.env.spawn_tick[i] = 1;
                     s.env.alive[i] = 1;
@@ -136,19 +136,57 @@ test("same-tick death does not reuse the dead slot (death survives; no phantom r
         },
     });
     // tokA 死于刻 3 入侵（保原动作）；死亡幸存——end 经 died_this_tick 置位
-    //（死因在刻 3 装配时完好），运行时冻结，不被同刻复用吞成幻影
+    //（死因被同刻复用清除 → unknown；ticks 用入席快照 = 3 − 1）
     const endA = st.runtimes.get("tokA")!.host.end;
-    expect(endA).toMatchObject({ kind: "dead", cause: "invade" });
-    // 刻 3 无出生（复用被推迟一刻）；刻 4 复用 slot 4 → 队首 tokC 弹出入座
+    expect(endA).toMatchObject({ kind: "dead", cause: "unknown", ticks: 2 });
+    // 刻 3 **同刻**复用 slot 4 → 队首 tokC 弹出入座（无一刻推迟）
     const log = st.env.birth_log;
-    expect(log.length).toBe(3); // 刻 1、2 出生 + 刻 4 复用
+    expect(log.length).toBe(4); // 刻 1、2 出生 + 刻 3 同刻复用 + 刻 4 次生出生
     expect(log[2][1]).toBe(4); // 复用槽 = 4
-    expect(log[2][0]).toBe(4); // 复用发生在刻 4（非死亡同刻）
+    expect(log[2][0]).toBe(3); // 复用发生在死亡同刻
+    // 次生效应：伪在场槽 6..35（res=0）于刻 3 饿死 → 刻 4 复用最小死槽 6（AI 轮替）
+    expect(log[3][0]).toBe(4);
+    expect(log[3][1]).toBe(6);
     expect(st.tokenSlot.get("tokC")).toBe(4);
     expect(st.runtimes.get("tokC")!.view!.self!.slot).toBe(4);
+    expect(st.env.alive[4]).toBe(1); // 新住客在场
     // tokA 的运行时不被幻影共享：仍是自己的死亡终局
     expect(st.runtimes.get("tokA")!.host.playerSlot).toBe(4); // 档案保留
     expect(st.runtimes.get("tokA")!.frozen).toBe(true);
+    expect(st.runtimes.get("tokC")!.host.end).toBeNull(); // 新住客未被幻影判死
+});
+
+test("dead player's window submission must not hijack a same-tick recycled slot's new occupant (review I-2)", () => {
+    // v2.5 同刻复用 × 窗口提交：tokA 窗 3（生前）提交刻 4 动作 → 刻 3 被入侵致死且
+    // 槽 4 同刻复用给 tokC → 旧防御（alive/seatArm）对新住客全部通过 → A 的提交成为
+    // C 的首刻动作（评审 I-2 实证：last_action[4]=1，C 从未提交）。修复：beginNextTick
+    // 跳过上一刻 died_this_tick 槽位的窗口条目（记录不动——消费期守卫，重演同构）。
+    const rec = bootRecord(["tokA", "tokB", "tokC"], 4);
+    rec.ticks[1].nextActions["5"] = [6, 4]; // 窗 2 → 刻 3：tokB 入侵 tokA
+    rec.ticks[2].nextActions["4"] = [1, -1]; // 窗 3 → 刻 4：tokA 提交 DEVELOP
+    const st = drive(rec, {
+        envFill: QUIET,
+        injectKnown: (s, k) => {
+            if (k === 2) {
+                s.env.known[5 * 36 + 4] = 1; // tokB 知 tokA（入侵门）
+                for (let i = 6; i < 36; i++) {
+                    s.env.spawn_tick[i] = 1;
+                    s.env.alive[i] = 1;
+                }
+                s.env.free_pool = 20;
+                s.env.pending_spawns[0] = 12.5;
+            }
+        },
+    });
+    // tokA 死于刻 3 入侵；槽 4 同刻复用 → tokC 入座（复用 test 同款装置）
+    expect(st.runtimes.get("tokA")!.host.end).toMatchObject({ kind: "dead" });
+    expect(st.tokenSlot.get("tokC")).toBe(4);
+    expect(st.env.alive[4]).toBe(1);
+    // 刻 4：tokC 从未提交——首刻动作必须是 SILENT（而非 tokA 遗留的 DEVELOP）
+    expect(st.env.last_action[4]).toBe(0);
+    // 死者运行时不随新住客累计（M-2：kills/loot 在死亡刻定格）
+    expect(st.runtimes.get("tokA")!.loot).toBe(0);
+    expect(st.runtimes.get("tokA")!.kills).toBe(0);
 });
 
 test("seats: births fewer than roster → leftover tokens stay queued", () => {
@@ -287,7 +325,7 @@ test("open window: in-flight invade exposes invader in the victim's view at env.
     const vb = st.runtimes.get("tokB")!;
     expect(vb.host.phase).toBe("awaiting-rechoice");
     expect(vb.host.pendingInvader).toBe(4);
-    expect(vb.view!.invasion).toEqual({ invaderId: 4 });
+    expect(vb.view!.invasion).toEqual({ invaderId: 4, originalAction: 0 }); // 原动作 = 未提交缺省 SILENT
     const invaded = vb.view!.log.find((e) => e.key === "log.invaded");
     expect(invaded?.tick).toBe(3); // env.t+1（§0.3：与同刻结算事件同刻号）
     const va = st.runtimes.get("tokA")!;
@@ -335,9 +373,10 @@ test("AI one-choice basis = window-start snapshot (stash), not beginTick state",
     const st5 = run(5);
     // T(4) 时手上的 stash = a₅：基线刻 3（上一边界算定），d 的选择仍是 BOTHER
     expect(seen[0]).toEqual({ basis: 3, slot3: 3 });
-    // 刻 5 执行 = 预算的 a₅：slot0/1/2 不受扰动（ DEVELOP/SILENT 无目标门）
+    // 刻 5 执行 = 预算的 a₅：slot0/1/2 不受扰动（SILENT/DEVELOP 无目标门——
+    // v2.5 权重下 a 臂此刻 greedy 为 SILENT，判别点在 slot3 的执行分离与刻 6 翻转）
     const at5 = Array.from(st5.env.last_action.subarray(0, 4));
-    expect([at5[0], at5[1], at5[2]]).toEqual([1, 0, 1]);
+    expect([at5[0], at5[1], at5[2]]).toEqual([0, 0, 1]);
     // 刻 6：a₆ 基线含扰动 → BOTHER 非法 → 必翻转
     expect(run(6).env.last_action[3]).not.toBe(3);
 });

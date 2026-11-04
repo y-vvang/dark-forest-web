@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { ScriptedRng } from "@/lib/engine/rng";
 import { DarkForestEnv2 } from "@/lib/engine/env";
-import { V24_CONFIG } from "@/lib/engine/config";
+import { V25_CONFIG } from "@/lib/engine/config";
 import { ViewTracker } from "./view";
 import { SoloMatch } from "./match";
 
@@ -14,8 +14,11 @@ function baseEnvRng(fill = 0.01) {
     );
 }
 
+/** 到达刻注入：u=0 → arrival 1（玩家 = 首个内生出生——v2.5 到达制的退化点，旧测试口径） */
+const ARR1 = () => new ScriptedRng([0.0], 0);
+
 test("queued → waitBirth; birth → birthSelf; self marker appears (rules ②⑤⑥)", () => {
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     const tr = new ViewTracker(m);
     const v0 = tr.update();
     expect(v0.phase).toBe("queued");
@@ -39,7 +42,7 @@ test("AI-vs-AI strike invisible; own detection produces contacts (rules ⑦③)"
         [...Array(72).fill(0.02), 9, 9, 9, 9, 10, 10, 10, 10, 12.5],
         0.05,
     );
-    const m = new SoloMatch(7, ["df"], new Map(), V24_CONFIG, { envRng });
+    const m = new SoloMatch(7, ["df"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -59,7 +62,7 @@ test("AI-vs-AI strike invisible; own detection produces contacts (rules ⑦③)"
 });
 
 test("player detect → contact entries + known markers; observe fills intel (rules ③①)", () => {
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3), // pacifist 恒 DEVELOP（非静默可被探测）
     });
@@ -86,7 +89,7 @@ test("player detect → contact entries + known markers; observe fills intel (ru
 });
 
 test("own strike hit / broadcast flow (rules ①④)", () => {
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -117,7 +120,7 @@ test("known civ dies → dark entry, marker vanishes (rule ⑥)", () => {
     );
     // random 对手：t0/t1 全 DEVELOP（非静默），t2 五席（slot5 于 t1 出生）——slot0 STRIKE 目标 slot1
     const presetRng = new ScriptedRng([1, 1, 1, 1, 1, 1, 1, 1, 4, 0, 0, 0, 0, 1], 0.5);
-    const m = new SoloMatch(7, ["random"], new Map(), V24_CONFIG, { envRng, presetRng });
+    const m = new SoloMatch(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng, presetRng });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -135,7 +138,7 @@ test("known civ dies → dark entry, marker vanishes (rule ⑥)", () => {
 
 test("invasion notice: view.invasion + log.invaded (rule ②)", () => {
     const presetRng = new ScriptedRng([1, 1, 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 4], 0.5);
-    const m = new SoloMatch(7, ["random"], new Map(), V24_CONFIG, { envRng: baseEnvRng(), presetRng });
+    const m = new SoloMatch(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng(), presetRng });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -145,7 +148,7 @@ test("invasion notice: view.invasion + log.invaded (rule ②)", () => {
     m.submitAction(1, -1); // t2：slot0 入侵玩家
     const v = tr.update();
     expect(m.phase).toBe("awaiting-rechoice");
-    expect(v.invasion).toEqual({ invaderId: 0 });
+    expect(v.invasion).toEqual({ invaderId: 0, originalAction: 1 }); // 原动作 = 上窗提交的 DEVELOP
     expect(tr.getLog().slice(-1)[0]).toMatchObject({ key: "log.invaded", params: { id: 0 } });
     m.submitRechoice(6); // 反咬 → 死亡：log.death + end
     const v2 = tr.update();
@@ -157,7 +160,7 @@ test("invasion notice: view.invasion + log.invaded (rule ②)", () => {
 });
 
 test("birth of others is intel-free (rule ⑩)", () => {
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -174,7 +177,7 @@ test("birth of others is intel-free (rule ⑩)", () => {
 test("update() hands out a FRESH log array each call (React element-identity bailout)", () => {
     // 用户手测回归（2026-10-08）：日志冻结在出生消息——React Compiler 缓存元素，
     // events 引用恒等 → EventLog 子树永不重渲染。契约：每次 update 必须返回新数组。
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, { envRng: baseEnvRng() });
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng() });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -189,7 +192,7 @@ test("log.contact emits SELF-RELATIVE torus deltas matching the centered chart (
     // 相机居中后星图 = 自身相对坐标；日志绝对坐标会与星图失联（玩家不知自己的世界坐标）。
     // 契约：contact 的 (x,y) = wrapDelta(civ − self)，带符号整数，与星图同构。
     // slot1 移到 (12,92)——自身在 (0.02,0.02) → 环面差 (+12,−8)，距离 ≈14.4 ≤ 30 可探测。
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3), // pacifist 恒 DEVELOP（非静默可被探测）
     });
@@ -216,7 +219,7 @@ test("domain marker intel is FROZEN at the windup tick end (review Important 1)"
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 1, 1, 1, 1, 1, 1, 1], // t0..t4 各 4 席（出生已抑制）
         0.5,
     );
-    const m = new SoloMatch(7, ["random"], new Map(), V24_CONFIG, { envRng: baseEnvRng(0.025), presetRng });
+    const m = new SoloMatch(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng(0.025), presetRng });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -241,7 +244,7 @@ test("domain marker intel is FROZEN at the windup tick end (review Important 1)"
 });
 
 test("v2.4 own reveal: log.ownReveal with target id; target public next tick (rule ①)", () => {
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -262,13 +265,15 @@ test("v2.4 own reveal: log.ownReveal with target id; target public next tick (ru
     expect(v.markers.find((x) => x.id === 1)?.state).toBe("public"); // 他人揭露的 public 化可见
 });
 
-test("v2.4 rule ⑫: being revealed is INVISIBLE — no log entry of any kind", () => {
-    // slot1（tech 2）t1 探测到玩家 → t2 揭露玩家 → t3 结算：玩家无任何感知条目
+test("v2.5 rule ⑫ flip: being revealed is now PERCEIVED — log.revealed, no attribution", () => {
+    // slot1（tech 2）t1 探测到玩家 → t2 揭露玩家 → t3 结算：v2.5 self_public 语义
+    // 落地——public 0→1 翻转记 log.revealed（无归因——玩家不知是谁揭露的），
+    // 自身标记挂白环旗标（Phase 4 渲染）。揭露刻本身仍零感知（隔一刻到阶段 1）。
     const presetRng = new ScriptedRng(
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 4],
         0.5,
     );
-    const m = new SoloMatch(7, ["random"], new Map(), V24_CONFIG, { envRng: baseEnvRng(0.025), presetRng });
+    const m = new SoloMatch(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng(0.025), presetRng });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -280,13 +285,35 @@ test("v2.4 rule ⑫: being revealed is INVISIBLE — no log entry of any kind", 
     const len = tr.getLog().length;
     m.submitAction(0, -1); // t2：slot1 BOTHER（脚本 3）目标玩家（脚本 4）
     tr.update();
-    const entries = tr.getLog().slice(len).map((e) => e.key);
-    expect(entries).toEqual([]); // ⑫：被揭露零感知（无 contact/broadcast/invaded）
+    expect(tr.getLog().slice(len).map((e) => e.key)).toEqual([]); // 揭露刻零感知（隔一刻结算）
     m.submitAction(0, -1); // t3：揭露结算（public[4]=1，known[all,4]）
-    const entries2 = tr.getLog().slice(len).map((e) => e.key);
-    tr.update();
+    const v = tr.update();
     expect(m.env.public_[4]).toBe(1);
-    expect(entries2).toEqual([]); // 结算刻同样零感知
+    expect(tr.getLog().slice(len).map((e) => e.key)).toEqual(["log.revealed"]); // ⑫ 翻转：无归因通知
+    expect(v.markers.find((x) => x.id === 4)?.revealed).toBe(true); // 自身白环旗标
+    expect(v.self?.public).toBe(true); // self_public 语义
+});
+
+test("v2.5 self_public: own BROADCAST_ALL flip is not double-logged (ownBroadcast covers it)", () => {
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
+        envRng: baseEnvRng(0.025),
+        presetRng: new ScriptedRng([], 0.3),
+    });
+    const tr = new ViewTracker(m);
+    tr.update();
+    m.start();
+    m.env.tech[4] = 6; // 广播门
+    tr.update();
+    m.submitAction(2, -1); // t1：BROADCAST_ALL（自曝）
+    tr.update();
+    expect(tr.getLog().some((e) => e.key === "log.ownBroadcast")).toBe(true);
+    const len = tr.getLog().length;
+    m.submitAction(0, -1); // t2：结算 → public[4] 0→1（隔一刻的翻转）
+    const v = tr.update();
+    expect(m.env.public_[4]).toBe(1);
+    expect(tr.getLog().slice(len).some((e) => e.key === "log.revealed")).toBe(false); // 不重复记
+    expect(v.markers.find((x) => x.id === 4)?.revealed).toBe(true); // 白环仍挂（self_public 可见）
+    expect(v.self?.public).toBe(true);
 });
 
 test("v2.4 third-party reveal looks like a self-broadcast to the player (deception)", () => {
@@ -297,7 +324,7 @@ test("v2.4 third-party reveal looks like a self-broadcast to the player (decepti
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 3],
         0.5,
     );
-    const m = new SoloMatch(7, ["random"], new Map(), V24_CONFIG, { envRng: baseEnvRng(0.025), presetRng });
+    const m = new SoloMatch(7, ["random"], new Map(), V25_CONFIG, { arrivalRng: ARR1(), envRng: baseEnvRng(0.025), presetRng });
     const tr = new ViewTracker(m);
     tr.update();
     m.start();
@@ -322,7 +349,7 @@ test("v2.4 third-party reveal looks like a self-broadcast to the player (decepti
 });
 
 test("v2.4 reward view: configured stream + four-arm comparison (user 2026-10-10)", () => {
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -361,7 +388,7 @@ test("v2.4 reward view: configured stream + four-arm comparison (user 2026-10-10
 test("v2.4 own reveal suppressed when the target's domain activates between lock and queue (stage-0→3 order)", () => {
     // 评审修复（review 2026-10-12 #2）：目标在锁定后、入队前（阶段 0 域激活）转入 in_domain →
     // 阶段 3 静默跳过揭露——view 不得发 ownReveal（感知忠实：宁可少知，不渲染未发生的事件）。
-    const m = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -381,7 +408,7 @@ test("v2.4 own reveal suppressed when the target's domain activates between lock
     expect(m.env.pending_reveal.some((e) => e[0] === "other")).toBe(false); // 揭露确实未入队
     expect(tr.getLog().slice(len).some((e) => e.key === "log.ownReveal")).toBe(false); // 不得虚报
     // 对照组：目标未入域 → 正常 ownReveal
-    const m2 = new SoloMatch(7, ["pacifist"], new Map(), V24_CONFIG, {
+    const m2 = new SoloMatch(7, ["pacifist"], new Map(), V25_CONFIG, { arrivalRng: ARR1(),
         envRng: baseEnvRng(0.025),
         presetRng: new ScriptedRng([], 0.3),
     });
@@ -398,14 +425,15 @@ test("v2.4 own reveal suppressed when the target's domain activates between lock
 });
 
 /**
- * 槽复用（在线多生命，用户 2026-10-14）× 感知缓存（规则①③/评审 Important 1）：
- * 存活玩家的 tracker 横跨槽位复用——known 列被引擎重置（认知只增不减是 env2 语义，
- * true→false 仅复用发生）时，旧住客的 prevObserved/frozenIntel 缓存必须同步清除，
- * 否则新住客的 OBSERVE 增量被吞、黑域冻结情报显示旧住宽数值。
+ * 槽复用（v2.5 缺省行为——原在线偏离条款已消解）× 感知缓存（规则①③/评审
+ * Important 1）：存活玩家的 tracker 横跨槽位复用——known 列被引擎重置（认知
+ * 只增不减是 env2 语义，true→false 仅复用发生）时，旧住客的 prevObserved/
+ * frozenIntel 缓存必须同步清除，否则新住客的 OBSERVE 增量被吞、黑域冻结情报
+ * 显示旧住宽数值。
  */
-test("slot reuse: tracker evicts stale per-slot caches when the known column resets", () => {
+test("slot recycle: tracker evicts stale per-slot caches when the known column resets", () => {
     const env = new DarkForestEnv2(
-        { ...V24_CONFIG, slotReuse: true },
+        V25_CONFIG,
         new ScriptedRng([...Array(72).fill(0.02), 1, 2, 3, 4, 10, 10, 10, 10, 12.5], 0.9),
     );
     env.reset();
@@ -481,7 +509,7 @@ test("slot reuse: tracker evicts stale per-slot caches when the known column res
  */
 test("death without reuse leaves no phantom contact/observed on the next tick", () => {
     const env = new DarkForestEnv2(
-        V24_CONFIG,
+        V25_CONFIG,
         new ScriptedRng([...Array(72).fill(0.02), 1, 2, 3, 4, 10, 10, 10, 10, 12.5], 0.9),
     );
     env.reset();

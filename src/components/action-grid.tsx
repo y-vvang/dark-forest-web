@@ -67,6 +67,10 @@ export function ActionGrid({
     onExecute,
     executeDisabled,
     cfg,
+    rechoice,
+    onRechoice,
+    onKeepOriginal,
+    rechoiceDeadline,
 }: {
     tech: number;
     res: number;
@@ -87,8 +91,96 @@ export function ActionGrid({
     executeDisabled?: boolean;
     /** 会话环境配置：门理由文字与真实门槛一致（缺省 = v2.4 默认） */
     cfg?: EnvConfig;
+    /** v2.5 重选模式（非 null = 被入侵且未提交重选，2026-11-01 弹窗退役）：动作格
+     *  整体切换为重选界面——任意动作直提（不选靶：目标沿用本刻原选） */
+    rechoice?: { invaderId: number; originalAction?: number } | null;
+    onRechoice?: (action: number) => void;
+    onKeepOriginal?: () => void;
+    /** 在线模式的窗口剩余秒（重选提示行；solo 不传 = 无限时，§13） */
+    rechoiceDeadline?: number | null;
 }) {
     const { t } = useI18n();
+
+    // v2.5 重选模式（用户 2026-11-01：弹窗退役、动作格反咬项）：任意动作 ∪ 反咬
+    // 直提（重选协议无目标字段——目标动作沿用本刻原目标）；invade 呈现为反咬
+    //（lethal 实心，无目标）；显式保持原动作。执行钮/姿态机/选靶全部不参与。
+    if (rechoice !== null && rechoice !== undefined && onRechoice !== undefined) {
+        return (
+            <Panel title={t("match.actions")}>
+                <p
+                    role="alert"
+                    className="mb-2 rounded-panel border border-lethal bg-panel px-3 py-2 text-sm text-lethal"
+                >
+                    {t("rechoice.notice", { id: rechoice.invaderId })}
+                    {rechoiceDeadline !== undefined && rechoiceDeadline !== null && (
+                        <span className="tnum ml-2 text-xs text-dim">
+                            {t("rechoice.deadline", { s: rechoiceDeadline })}
+                        </span>
+                    )}
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {ORDER.map((def) => {
+                        const isCounter = def.id === "invade";
+                        const reason = gateOf(def.id, tech, res, hasKnown, cfg);
+                        const blocked = !valid[ACTION_NUM[def.id]] || reason !== null;
+                        return (
+                            <button
+                                key={def.id}
+                                type="button"
+                                disabled={blocked}
+                                onClick={() => onRechoice(ACTION_NUM[def.id])}
+                                className={`flex min-h-16 flex-col items-start justify-center gap-1 rounded-panel border px-2 py-1 text-left ${
+                                    isCounter && !blocked
+                                        ? "border-lethal bg-lethal"
+                                        : blocked
+                                          ? "border-subtle opacity-40"
+                                          : "border-subtle hover:border-strong hover:bg-raised"
+                                }`}
+                            >
+                                <span
+                                    className={`text-sm font-bold ${
+                                        isCounter && !blocked ? "text-panel" : "text-ink"
+                                    }`}
+                                >
+                                    {isCounter ? t("rechoice.counter") : t(def.name)}
+                                </span>
+                                <span
+                                    className={`text-xs ${
+                                        isCounter && !blocked
+                                            ? "text-panel opacity-80"
+                                            : "text-dim"
+                                    }`}
+                                >
+                                    {blocked && reason !== null
+                                        ? t(reason.reason, reason.params)
+                                        : isCounter
+                                          ? t("rechoice.counter.sub")
+                                          : def.targets === true
+                                            ? t("rechoice.targetHint")
+                                            : t(def.sub)}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+                <button
+                    type="button"
+                    onClick={onKeepOriginal}
+                    className="mt-2 flex min-h-12 w-full flex-col items-center justify-center rounded-panel border border-subtle px-3 py-2 font-bold text-ink hover:border-strong hover:bg-raised"
+                >
+                    <span>{t("rechoice.keep")}</span>
+                    {rechoice.originalAction !== undefined && (
+                        <span className="text-xs font-normal text-dim">
+                            {t(
+                                ORDER.find((d) => ACTION_NUM[d.id] === rechoice.originalAction)
+                                    ?.name ?? "actions.silent",
+                            )}
+                        </span>
+                    )}
+                </button>
+            </Panel>
+        );
+    }
 
     return (
         <Panel title={t("match.actions")}>

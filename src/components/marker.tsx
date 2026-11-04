@@ -12,6 +12,8 @@ export type CivLike = {
     x: number;
     y: number;
     state: MarkerState;
+    /** v2.5 self_public：自身被公开 → 白环（与公开文明同形；仅自身标记置位） */
+    revealed?: boolean;
     tech?: number;
     res?: number;
 };
@@ -45,6 +47,7 @@ export function Marker({
     civ,
     ping = false,
     selectable = false,
+    threat = false,
     onPick,
     decorative = false,
 }: {
@@ -53,6 +56,8 @@ export function Marker({
     ping?: boolean;
     /** target-selection mode: clicking picks this civ instead of pinning */
     selectable?: boolean;
+    /** v2.5 入侵者高亮（重选窗口）：常显 lethal 环 + 警报光——§4 光名额自模态转移 */
+    threat?: boolean;
     onPick?: (civ: CivLike) => void;
     /** legend/lobby specimens: not focusable, hidden from the a11y tree */
     decorative?: boolean;
@@ -98,6 +103,10 @@ export function Marker({
         >
             {/* broadcast white ring / domain dark core */}
             {civ.state === "public" && (
+                <span className="absolute inset-[-3px] rounded-full border border-flash" />
+            )}
+            {/* v2.5 self_public：自身被公开 → 白环（同公开文明；self 态不降级） */}
+            {civ.revealed === true && civ.state !== "public" && (
                 <span className="absolute inset-[-3px] rounded-full border border-flash" />
             )}
             {civ.state === "domain" && (
@@ -165,6 +174,10 @@ export function Marker({
             >
                 {selectable && (
                     <span className="absolute inset-0 rounded-full border border-lethal opacity-0 group-hover:opacity-100" />
+                )}
+                {/* v2.5 入侵者标记：常显 lethal 环 + 警报光（重选窗口的红时刻） */}
+                {threat && (
+                    <span className="glow-lethal absolute inset-[-3px] rounded-full border border-lethal" />
                 )}
                 {inner}
             </button>

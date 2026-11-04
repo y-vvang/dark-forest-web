@@ -1,13 +1,18 @@
 /**
- * v2.4 环境参数（权威：experiment/experiment/config_v24.yaml env 节，
- * 装配口径同 data2_v24.py:38-67）。数值零偏离——改动即违背一致性硬要求。
- * v2.4 vs v2.3-fix：techSpawnLo=Hi=1.0（禁科技继承，出生科技恒 1.0）+ 新增
- * resRewardScale/attackReward 两奖励臂参数（默认 0=关；四臂 override 见
- * runs/v24_arms/<arm>/config.yaml）。种子不经配置传递：Rng 在构造期注入
+ * v2.5 环境参数（权威：experiment/experiment/config_v25.yaml env 节，
+ * 装配口径同 data2_v25.py）。数值零偏离——改动即违背一致性硬要求。
+ * v2.5 vs v2.4：+nNorm（obs 归一化固定分母，yaml 无此键=data2_v25 缺省 36.0）；
+ * 死槽复用成为缺省行为（env2_v25 三级出生偏好——原 slotReuse 偏离条款消解）。
+ * v2.4 要点保留：techSpawnLo=Hi=1.0（禁科技继承，出生科技恒 1.0）+ 奖励臂参数
+ * resRewardScale/attackReward（默认 0=关；四臂 override 见
+ * runs/v25_arms/<arm>/config.yaml）。种子不经配置传递：Rng 在构造期注入
  * （见 rng.ts / game-mechanics.md §2.2）。
  */
 export interface EnvConfig {
     nAgents: number;
+    /** v2.5 obs 归一化固定分母（knownAlive/aliveCount 均除以它并 clip [0,2]；
+     *  env2_v25 ctor 第 2 位置参数，yaml 无此键——data2_v25 缺省 36.0） */
+    nNorm: number;
     world: number;
     detectRadius: number;
     tMax: number;
@@ -48,14 +53,11 @@ export interface EnvConfig {
     resRewardScale: number;
     /** v2.4 奖励臂：打击击杀/入侵缴获/揭露目标 各 +attack（默认 0=关） */
     attackReward: number;
-    /** **对实验的明示偏离（仅在线多生命世界开启）**：36 槽耗尽后允许复用已死槽
-     *  重生（env2_v24 硬上限 = 单局 36 次出生；金标准轨迹实证暴力世界会耗尽）。
-     *  缺省/undefined = false = 忠实 v2.4。 */
-    slotReuse?: boolean;
 }
 
-export const V24_CONFIG: EnvConfig = {
+export const V25_CONFIG: EnvConfig = {
     nAgents: 36,
+    nNorm: 36.0,
     world: 100.0,
     detectRadius: 30.0,
     tMax: 250,
@@ -95,10 +97,10 @@ export const V24_CONFIG: EnvConfig = {
 };
 
 /**
- * v2.4 四奖励臂的环境参数 override（权威：experiment/runs/v24_arms/<arm>/config.yaml
- * env 节）。游戏层奖励展示/开局配置的臂预设共用此表。
+ * v2.5 四奖励臂的环境参数 override（权威：experiment/runs/v25_arms/<arm>/config.yaml
+ * env 节；臂值与 v2.4 相同——臂义不变）。游戏层奖励展示/开局配置的臂预设共用此表。
  */
-export const V24_ARMS: Record<string, Partial<EnvConfig>> = {
+export const V25_ARMS: Record<string, Partial<EnvConfig>> = {
     a_classic: {},
     b_terminal: { softsignRewardScale: 0.0, bdEntryPenalty: 0.0 },
     c_res: { resRewardScale: 0.0025 },

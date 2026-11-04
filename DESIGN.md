@@ -71,7 +71,8 @@
 | 已知未观测 | `contact` @70% 空心 | 空心圆标记，无数据标签 |
 | 观测成功（精确情报） | `contact` 实心 | 实心标记 + 数据标签（#编号、科技、资源） |
 | 探测概率读数 | `contact` | 传感器面板中的概率数字 |
-| 公开坐标（被广播） | `flash` | 标记外的白色细环 + 广播瞬间白闪 |
+| 公开坐标（被广播） | `flash` | 标记外的白色细环 + 广播瞬间白闪（v2.5：自身被揭露同形——白环也套在自己上） |
+| 入侵者（重选窗口） | `lethal` | 常显红环 + 警报光（v2.5：模态退役，红时刻移入星图） |
 | 打击 / 入侵 / 互毁 | `lethal` | 事件行、警报按钮态、被瞄准时的威胁边框 |
 | 护盾挡下 | `lethal` 边 + `resource` 数字 | "打击被挡"事件为红色，耗散量用玉色负数（目标付账） |
 | 黑域 | `domain` | 紫色封盘标记；域内文明的名字与读数转紫；不可逆操作确认边框 |
@@ -124,10 +125,12 @@
 - **边框**：默认 `1px solid subtle`；激活/悬停边框升为 `strong`；分隔线 `subtle`。
 - **焦点**：`:focus-visible` 一律 `2px outline self`、`outline-offset: 2px`（琥珀焦点环全站统一，
   键盘可见焦点是质量底线）。
-- **层级**：无阴影。浮层（入侵警报模态除外）用 `panel` 底 + `strong` 边框。
-  **允许的"光"仅两处**（2026-10-09 用户修订，原规则仅一处）：① 入侵警报模态的 `lethal`
-  边框外一圈 `rgba(232,80,63,.25)` 24px 柔光——警报灯语义；② 自身标记的恒显 `self` 琥珀
-  光晕（`.glow-self`，12px 静态 box-shadow，无动画）——"我是谁"在星图上一眼可辨。
+- **层级**：无阴影。浮层用 `panel` 底 + `strong` 边框。
+  **允许的"光"仅两处**（2026-10-09 用户修订；2026-11-01 v2.5 名额转移——入侵警报模态
+  随重选模式退役）：① **入侵者标记**重选窗口期间的 `lethal` 环外一圈
+  `rgba(232,80,63,.25)` 柔光（`.glow-lethal`——警报灯语义，随红环常显）；② 自身标记的
+  恒显 `self` 琥珀光晕（`.glow-self`，12px 静态 box-shadow，无动画）——"我是谁"在星图上
+  一眼可辨。
 
 ## 5. 动效令牌（仅 CSS）
 
@@ -153,7 +156,8 @@
 | 自己 | 实心圆 | `self` 底色 + **恒显亮色光晕**（`.glow-self` 静态 box-shadow，§4 豁免②；2026-10-09 用户修订，替代原"外圈细环"——halo 环语义不明）；附**探测半径环**（`faint` 虚线圆，半径=30/100 比例缩放） |
 | 已知未观测 | 空心圆 | `contact` 描边 @70%；浮层显示"尚无精确情报" |
 | 已观测 | 实心圆 | `contact` 填充；情报经悬停/点击浮层呈现 |
-| 公开 | 环加环 | 任一状态外再套 `flash` 1px 白环 |
+| 公开 | 环加环 | 任一状态外再套 `flash` 1px 白环（v2.5：自身被揭露时套在 self 态上——不降级） |
+| 入侵者（重选窗口） | 环加环 | 任一状态外再套 `lethal` 1px 红环 + `glow-lethal` 警报光（v2.5） |
 | 黑域封存 | 封盘 | `domain` 填充圆 + 中心 `void` 点；浮层显示封存时刻的冻结情报并附"封存"注 |
 | 死亡 | 消隐 | 事件刻红色叉淡出，随后从星图移除（历史只在日志里） |
 | 排队中（在线） | 幽灵 | `faint` 虚线圆 |
@@ -180,6 +184,18 @@
 | `actions.invade` | 入侵 | Invade |
 | `actions.strike` | 打击 | Strike |
 
+**被入侵重选**（2026-11-01 v2.5——警报模态退役，动作格反咬项；§10.7）：
+
+| 键 | 中文 | English |
+|---|---|---|
+| `rechoice.notice` | 你被 #{id} 入侵——重选本刻动作 | #{id} is invading you — re-choose this tick's action |
+| `rechoice.deadline` | 距截止 {s}s | {s}s to deadline |
+| `rechoice.counter` | 反咬 | Counter-invade |
+| `rechoice.counter.sub` | 互毁——你们同归于尽 | Mutual destruction — you both die |
+| `rechoice.keep` | 保持原动作 | Keep original action |
+| `rechoice.targetHint` | 目标沿用本刻原选 | Target carries over from this tick |
+| `rechoice.submitted` | 重选已提交——等待本刻结算 | Re-choice submitted — waiting for the tick to settle |
+
 按钮下代价说明例（`text-xs dim`，两行内）：`观测：获所选（或最近已知）文明的科技与资源；
 下刻随机文明会发现你` / `Observe: learn the chosen (or nearest known) civ's tech & res;
 a random civ detects you next tick`；`揭露：公开已知目标的坐标；你自己不暴露` /
@@ -200,6 +216,7 @@ a random civ detects you next tick`；`揭露：公开已知目标的坐标；�
 | `[049] 你入侵了 #9，缴获 5.2` | `[049] You invaded #9, looted 5.2` |
 | `[050] 你广播了坐标，下刻向全体公开` | `[050] You broadcast — public to all next tick` |
 | `[050] 你揭露了 #9——下刻起全体可见` | `[050] You revealed #9 — public to all next tick` |
+| `[054] 你的坐标已被公开——你不知道是谁干的` | `[054] Your coordinates are now public — you don't know by whom` |
 | `[051] 一个新文明诞生了` | `[051] A new civilization is born` |
 | `[052] 已知信号消失` | `[052] A known contact went dark` |
 | `[053] 你的文明诞生了` | `[053] Your civilization is born` |
@@ -207,9 +224,12 @@ a random civ detects you next tick`；`揭露：公开已知目标的坐标；�
 | `[112] 你死了。死因：饿死。存活 111 刻。` | `[112] You are dead. Cause: starvation. Survived 111 ticks.` |
 
 诞生事件**情报-free**（感知过滤规则⑩：出生不给 #id/资源）；护盾句仅当玩家为打击者（规则①；
-被打击而幸存无通知，规则⑨）。**揭露句**（v2.4 规则①/⑫）：自己揭露成功 → `[050] 你揭露了
-#9`；**被他人揭露零感知**（环境无通知机制——玩家不知道自己已公开）；他人揭露第三方在玩家
-视角与"该文明自曝"完全同形（规则④ broadcast 句）——归因歧义是机制真相，借刀杀人不可归因。
+被打击而幸存无通知，规则⑨）。**揭露句**（v2.5 self_public 语义，2026-11-01）：自己揭露
+成功 → `[050] 你揭露了 #9`；被他人揭露 → public 0→1 翻转记 `[054] 你的坐标已被公开——
+你不知道是谁干的`（无归因；自己的广播已有 ownBroadcast 句不重复记——翻转隔一刻到阶段 1，
+以上刻动作去重）；他人揭露第三方在玩家视角与"该文明自曝"完全同形（规则④ broadcast 句）
+——归因歧义是机制真相，借刀杀人不可归因。v2.5 同刻复用会先清死因再装配事件流——终局句
+兜底 `死因：未知` / `Cause: unknown`。
 目标选择条补充：`跳过选目标——取最近已知` / `Skip targeting — take the nearest known`
 （打击/观测共有）。行动执行按钮（2026-10-09，模型 B）：`执行 · 下一刻` /
 `Execute · next tick`。终局存活句（v2.4 配置轮参数化刻长）：`{t} 刻 · 终局存活 {n} 名文明` / `{t} ticks · {n} civilizations alive at the end`（此前硬编码 250——tMax 可配置后失真，评审修复 2026-10-12）。终局第三态：`你未及诞生` / `You were never born`、
@@ -236,7 +256,7 @@ a random civ detects you next tick`；`揭露：公开已知目标的坐标；�
 | 键 | 中文 | English |
 |---|---|---|
 | `match.advisor` | 参谋 | Advice |
-| `match.advisor.title` | 四臂模型在此步的选择 | The four arms' choices at this step |
+| `match.advisor.title` | 五个模型在此步的选择 | The five models' choices at this step |
 | `end.advisorUsed` | 本局使用过模型参谋 | Model advice was used this run |
 
 **对手选择**（2026-10-10 用户需求：合并单一列表 + 内联详情 + 动作画像；见 §10.10）：
@@ -244,12 +264,15 @@ a random civ detects you next tick`；`揭露：公开已知目标的坐标；�
 | 键 | 中文 | English |
 |---|---|---|
 | `solo.opponents` | 选择对手 | Choose your opponents |
-| `opp.arm.a_classic.desc` | 隐匿种田为主（静默 0.62 · 发展 0.36），偶发入侵收割 | Mostly silent development (silent 0.62 · develop 0.36), occasional invasion harvesting |
-| `opp.arm.b_terminal.desc` | 近乎全程静默（0.82）——唯一信号是死亡本身 | Nearly always silent (0.82) — the only signal is death itself |
-| `opp.arm.c_res.desc` | 掠夺流：高频入侵收割，以缴获为生 | Plunderer: constant invasion harvesting, lives on loot |
-| `opp.arm.d_malintent.desc` | 信息战：揭露他人坐标（0.18）+ 中频入侵——借刀杀人 | Info-war: reveals others' coordinates (0.18) + steady invasions — the borrowed knife |
+| `opp.arm.a_classic.desc` | 稳健种田（发展 0.76 · 静默 0.12），偶发入侵收割 | Steady farming (develop 0.76 · silent 0.12), occasional invasion harvesting |
+| `opp.arm.b_terminal.desc` | 静默过半（0.43）+ 发展与零星揭露——终点奖励塑形 | Mostly silent (0.43) with develop and occasional reveals — terminal-reward shaped |
+| `opp.arm.c_res.desc` | 掠夺流：高频入侵收割（6.45 次/百刻），以缴获为生 | Plunderer: constant invasion harvesting (6.45 per 100 ticks), lives on loot |
+| `opp.arm.d_malintent.desc` | 信息战纯化到极端：高频揭露他人坐标（0.807）——借刀杀人 | Info-war taken to the extreme: reveals others' coordinates (0.807) — the borrowed knife |
+| `opp.champion.desc` | 见过全部策略家族的泛化体（联盟训练）——多样，但不统治 | A generalist that has seen every strategy family (league-trained) — diverse, not dominant |
 
-`opp.df.desc` 数字更新为 v2.4 口径（14.5 杀/回合、零缴获）。画像源自 150 回合混战池
+`opp.df.desc` 数字更新为 v2.4 口径（14.5 杀/回合、零缴获）。臂画像于 v2.5 轮刷新（源自
+reports/v25_brief.md §3 的 last-50ep 训练画像）；champion 画像源自 v30 brief（league 训练，
+单种子披露同 `solo.disclosure`）。画像源自 150 回合混战池
 （单训练种子 42），以 `solo.disclosure` 披露；胜率数字从对手卡**移除**（用户裁定：原
 罗列胜率有误导性）。
 
@@ -265,6 +288,14 @@ a random civ detects you next tick`；`揭露：公开已知目标的坐标；�
 | `solo.config.g.force` | 武力 | Force |
 | `solo.config.g.gates` | 门槛 | Gates |
 | `solo.config.g.reward` | 奖励 | Rewards |
+| `solo.config.intro` | 对局的底层规则：宇宙常量。不懂就别动——默认即实验环境。 | The rulebook under the match: universe constants. If unsure, leave them — defaults mirror the experiment. |
+| `solo.config.g.clock.desc` | 世界走多少刻、每刻多久（在线固定 20 秒，这里只改单机）。 | How long the world runs. Online ticks are fixed at 20s; this affects solo only. |
+| `solo.config.g.detect.desc` | 谁能看见谁：探测概率与被看见的范围。 | Who sees whom: detection odds and how far sight reaches. |
+| `solo.config.g.econ.desc` | 资源从哪来、到哪去：总量预算、出生成本、自然流失。 | Where resources come from and go: total budget, birth cost, natural drain. |
+| `solo.config.g.tech.desc` | 文明成长的速度与上限。 | How fast civilizations grow, and how far. |
+| `solo.config.g.force.desc` | 打击与入侵的杀伤规则。 | The killing rules for strikes and invasions. |
+| `solo.config.g.gates.desc` | 各动作的科技/资源门槛。 | Tech/resource thresholds each action requires. |
+| `solo.config.g.reward.desc` | 你的得分函数（不影响对手行为）。 | Your scoring function (opponents are unaffected). |
 | `solo.config.armPresets` | 奖励臂预设 | Reward-arm presets |
 | `solo.config.default` | 默认 | Default |
 | `solo.config.reset` | 恢复默认 | Reset to defaults |
@@ -324,7 +355,8 @@ world/note/cancel/ghost/waiting` 为既成事实源头）：
 - 移动端纵向堆叠：星图 → 自身 → 行动 → 日志；按钮触控目标 ≥44px。
 - **首页 hero = 星图图例**：不做大数字横幅，把"认知阶梯"本身作为首屏主角（既是视觉锚点，
   也是这个游戏唯一需要先学会的东西）。两个模式入口：`与智能博弈`（选对手）、`在线排队入场`。
-- 入侵反击窗口 = 全屏模态（`lethal` 边 + 唯一允许的柔光 + 倒计时条），全站最红的时刻。
+- 入侵反击窗口 = 动作格重选形态（§10.7）+ 星图入侵者红环与警报光——全站最红的时刻
+  （2026-11-01 v2.5 起无全屏模态与独立倒计时条；窗口计时 = 既有刻读数）。
 
 ## 9. Tailwind 接线（脚手架后生效）与下一步
 
@@ -424,13 +456,20 @@ i18n 规范见 §12——HTML 原型以 §9–§12 为完整依据。
 - 新接触：`.marker--ping` 触发 `ping` 一次（480ms）。
 - 标记为 `<button>`，aria-label 用 §7 双语句式（例：`文明 #7 · 已观测 · 科技 3.1 · 资源 8.4`）。
 
-### 10.7 入侵警报 `invasion-modal`（全站唯一的红时刻）
-- 遮罩 `bg-void/80`；卡片居中 `max-w-md bg-panel border border-lethal rounded-panel p-6` +
-  唯一柔光 `0 0 24px rgba(232,80,63,.25)`；`role="alert"`，打开即聚焦首个选项。
-- 内容：`入侵警报`（text-xl lethal）/ `#7 正在入侵你 · 反击窗口`（text-base ink）/
-  **倒计时条（仅在线模式）** `h-1 bg-lethal` 宽度 100→0 线性动画，时长 = 当刻剩余时间
-  （§13：单机无限时，无倒计时条）。
-- 选项：`反咬（互毁）`（lethal 实心）、`声明黑域`（domain 边框，tech>5 才可用）、`取消`。
+### 10.7 被入侵重选 `action-grid` 重选形态（2026-11-01 v2.5——原全屏警报模态退役）
+- 触发：被入侵且本窗未提交重选（在线 `ConsoleView.rechoice === null`；单机
+  `awaiting-rechoice` 期）——动作格整体切换，世界照常渲染（无遮罩、无中断）。
+- 通知行：`rechoice.notice {id}`（lethal 边框面板，`role="alert"`）+ 在线追加
+  `rechoice.deadline {s}`——窗口计时 = 控制台既有刻读数（§13），无独立倒计时条。
+- 选项 = **任意动作 ∪ 反咬**（用户 2026-11-01）：8 动作钮直提（valid 行照常禁用，
+  理由文字同 §10.4；**目标动作不进入选靶流程**——子行换 `rechoice.targetHint`，
+  目标沿用本刻原选/最近已知兜底）；`invade` 呈现为 `反咬`（lethal 实心、无目标——
+  Q9 互毁语义不变）；`rechoice.keep` 全宽钮（下注原动作名，单机 = 取消重选 /
+  在线 = -1）。单机无限时照旧（§13）；在线到刻 = 最后提交（缺席/保持 = 原动作）。
+- 星图配套：入侵者标记常显 `lethal` 环 + `glow-lethal` 警报光（§4 光名额自模态
+  转移——全站最红的时刻从遮罩移入星图本体）；日志 `log.invaded` 承载身份。
+- 提交后（在线）`ConsoleView.rechoice` 回显 → 客户端退出重选模式、恢复下一刻
+  提交通道（当窗仍可提交；安全网随之武装）。
 
 ### 10.8 终局 `end-overlay`
 遮罩同上；卡片 `border-strong`。**死亡态**：`你死了`（text-xl lethal）+
@@ -466,7 +505,9 @@ dim，`600ep · seed 42`）+ 奖励参数行（text-xs mono dim，如 `soft 0.01
   零成本）。隐藏页计时器被浏览器节流 → 不触发 → 静默（AFK 语义）。回车 = 重复上刻
   （`online.enterHint`）；"已提交"行 = `online.submitted {t}`；待执行高亮 = 派生自本窗提交
   （刻后自动回退姿态）；
-- 入侵模态 = §10.7 组件的 `timed` 形态（倒计时条时长 = 当刻剩余，CSS-only，恒走满——无快进后不再提前消失）；"取消" = 本地关闭模态（截止保原即环境语义，不发 -1）；
+- 入侵重选 = §10.7 的重选形态（`rechoice.deadline {s}` = 当刻剩余，随轮询更新）；
+  提交后 `ConsoleView.rechoice` 回显 → 退出重选模式、恢复下一刻提交通道（安全网
+  随之武装）；`rechoice.submitted` 确认行；到刻 = 最后提交（缺席/保持 = 原动作——环境语义）；
 - 终局遮罩：`再排一次`（`online.requeue` → 排入下一个世界）+ 返回首页；无旁观（死即冻结）。
 `/online` 单页 token 驱动：大厅态 = §10.11 排队卡 + 幽灵星图；`online.rollover` 在滚动后的大厅
 显示一行；`online.offline` 为连接失败横幅（数据保持旧态）。
@@ -488,11 +529,13 @@ greedy argmax（ε=0，不消耗会话随机流——与对局推进完全隔离
 **用过即置 advised**——终局卡片（§10.8）附一行 `本局使用过模型参谋`（text-xs dim）：
 这是诚实披露标记（AI 辅助 = 非独立生存）。未出生禁用。
 
-### 10.14 世界常量面板 `config-panel`（2026-10-10 用户需求：开局前可配置）
+### 10.14 世界常量面板 `config-panel`（2026-10-10 用户需求；2026-11-01 v2.5 增说明文字）
 /solo 页对手列表下方的可折叠面板（默认折叠；标题行右侧 = `已改 {n} 项` 徽标，n>0 才显示）：
+- 折叠行 = `solo.config.intro` 一句总述（v2.5：原硬编码 mono 参数名串改文案）；
 - 分组七节（§7 键）：时长/探测/经济/科技/武力/门槛/奖励——每字段一行：参数名（text-xs mono
   ink）+ number 输入（text-xs tnum，mono）+ 默认值（text-xs mono dim，如 `250`）；失焦钳回
-  字段范围（cfg-io 的 25 精选参数；出生科技 = 单旋钮写 techSpawnLo=Hi，默认 1.0）；
+  字段范围（cfg-io 的 25 精选参数；出生科技 = 单旋钮写 techSpawnLo=Hi，默认 1.0）；每组头下
+  加一行 `solo.config.g.*.desc` 说明（text-xs dim，v2.5 用户需求"增加说明性文字"）；
 - 奖励节头部附**奖励臂预设**四钮（默认/a/b/c/d mono 短标签——设五参数）+ `恢复默认`；
 - 两条披露常驻面板脚注：`默认即实验参数…明示偏离` + `奖励参数…不影响对手模型行为`；
 - 开始对局时差集序列化写 sessionStorage（`df.env-cfg`），/match 读取（缺省/损坏 = 默认）。

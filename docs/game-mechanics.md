@@ -183,12 +183,18 @@ learner/random 一律均匀（stage_b.py:52 实际路径）。
 ### 6.1 座位分配与玩家出生
 
 - `env.reset(seed=S)`：初始 4 席 = 所选对手循环填充。
-- **玩家 = 下一个内生出生**（出生序 4，通常第 1 刻，因开局自由池均值 ≈100 ≥ 预滚额 ≤20）。
+- **玩家 = 首个 birth_tick ≥ arrivalTick 的内生出生**（v2.5 随机到达制，用户 2026-11-01：
+  `arrivalTick = 1 + floor(u·tMax)`，u 由 `seedOf(S,"arrival")` 新域单抽——arrival=1 即旧
+  "首个内生出生"行为）。玩家可能在世界演化任意时刻出生（经历刻数 < tMax）；到达前的出生
+  按所选对手循环。
   出生前复用 /online 的幽灵排队视图：只见全局读数（刻/存活/自由池），无任何情报。
+  **v2.5 多刻排队**：`start(onQueuedTick?)` 逐刻回调（client 传 `tracker.update()`——
+  ViewTracker 契约"每刻至少一次"；旧"排队恰 1 刻"假设随到达制失效）。
   v2.4：出生科技恒 `tech_spawn_lo`=1.0（无继承）；开局配置若拉高 resMin/拉低预算可能推迟出生——
   `start()` 循环自动逐刻推进直至出生或 done（未及诞生分支兜底）。
-- 之后每次内生出生继续按所选对手循环。36 席一次性（Q11）；预算 150 保证全期出生 ≤ ~30，玩家席安全。
-- 极端兜底：若玩家出生前热寂（对局即 done 而玩家未出生）→ 终局覆盖层"未及诞生"分支（新增文案键）。
+- 之后每次内生出生继续按所选对手循环。v2.5 三级出生（未生槽→死槽复用→扩容）：玩家席
+  可能踏上复用槽；预算 150 为出生总刹车。
+- 极端兜底：若玩家出生前终局（热寂/到点而玩家未出生）→ 终局覆盖层"未及诞生"分支（新增文案键）。
 
 ### 6.2 逐刻循环（DESIGN §13：单机每刻暂停）
 
@@ -197,7 +203,8 @@ learner/random 一律均匀（stage_b.py:52 实际路径）。
    候选 = select_targets(actions)[player] 行；INVADE/REVEAL 必须显式目标，STRIKE/OBSERVE 可不选
    =最近已知兜底）
 2. begin_tick → invaded[]
-3. 受入侵者重选：AI 按其策略；玩家 = 入侵模态（反咬 INVADE / 黑域 BDOMAIN / 保持原动作）
+3. 受入侵者重选：AI 按其策略；玩家 = **动作格重选模式**（v2.5，2026-11-01 警报模态退役：
+   任意合法动作 ∪ 反咬 INVADE / 黑域 BDOMAIN / 保持原动作——DESIGN §10.7）
 4. resolve(re_actions)
 5. 感知过滤（§7）→ UI 事件 + 状态面板 + 星图更新；守恒断言
 6. 玩家死亡 → 死亡终局；env done（t≥250 或热寂）→ 存活终局
@@ -234,33 +241,37 @@ info 流是全知的；UI 只渲染**该文明在环境机制下真正可知**�
 | ⑨ | 被打击但幸存（无任何通知） | env 无此信号，**严格忠实** |
 | ⑩ | 出生情报：无 #id/资源，仅存活数变化 | 出生不进任何 obs/通知 |
 | ⑪ | 他人 tech/res/资源流失/爆炸 | 需 OBSERVE（①中的观测所得） |
-| ⑫ | **被揭露**（v2.4）：自己被他人 BOTHER 公开时**零感知**——环境无任何通知机制；known[·,player] 变化不进玩家行（view 只 diff 玩家 known 行） | env2_v24.py:457-472 无信号；测试锁定 view.test "being revealed is INVISIBLE" |
+| ⑫ | **被揭露的感知面（v2.5 翻转，2026-11-01）**：自己被他人 BOTHER 公开时——**自知已公开**（self_public 入 obs[8]，public 0→1 翻转记 `log.revealed`，无归因——不知是谁干的；自身标记挂白环）但**仍不知揭露者身份**（known[·,player] 变化不进玩家行） | env2_v25.py:408 self_public；自曝去重（上刻 BALL 已发 ownBroadcast） |
 
 原 mock 键的调整：`log.born` → 情报-free（"一个新文明诞生了"）；`log.blocked` → 仅当**玩家是打击者**时
 报"你的打击被护盾挡下"（目标不感知，规则⑨）；新增 `log.dark`（已知信号消失，规则⑥）；
 新增 `log.ownStrikeHit/Miss`、`log.ownInvade`、`log.ownBroadcast`、`log.ownReveal`（v2.4 揭露，
-规则①）、终局"未及诞生"分支文案。全部新键走 DESIGN.md §7 → en.ts + zh.ts 流程。
+规则①）、终局"未及诞生"分支文案。v2.5 轮（2026-11-01）：`log.revealed`（⑫ 翻转）+
+`cause.unknown`（同刻复用清死因兜底）+ 重选模式 `rechoice.*`（② 配套——警报模态退役，
+动作格反咬项）。全部新键走 DESIGN.md §7 → en.ts + zh.ts 流程。
 
-### 7.1 游戏层扩展（非感知数据——引擎/机制之外，v2.4 轮新增）
+### 7.1 游戏层扩展（非感知数据——引擎/机制之外；v2.4 轮新增，v2.5 轮修订）
 
 三项功能均为**游戏层**扩展，不触碰引擎 parity：
 
 - **奖励展示**（配置流 + 四臂对比）：引擎 `TickResult.rewardDetail`（TS-only 诊断：techTerm/
   resAtReward/attackCount/bdEnter，在 rewards 计算处顺带记录，**不进 info、不参与录制-回放比对**）
   → `rewards.ts` 组合任意参数集（当前 cfg / 四臂固定参数）。奖励参数不影响对手行为（披露常驻）。
-- **模型参谋**：四臂对玩家当前 obs/valid 行 greedy（`dqn.act`，ε=0 零 RNG——不触碰会话随机流）；
-  用过即于终局弹窗披露（`end.advisorUsed`）——AI 辅助 = 非独立生存的诚实标记。
-- **环境常量配置**：`cfg-io.ts` 精选 25 参数 + 出生科技旋钮；默认恒 = config_v24.yaml，任何改动 =
+- **模型参谋**：**五模型**（四臂 + champion，`MODEL_IDS`，用户 2026-11-01）对玩家当前 obs/valid
+  行 greedy（`dqn.act`，ε=0 零 RNG——不触碰会话随机流）；用过即于终局弹窗披露
+  （`end.advisorUsed`）——AI 辅助 = 非独立生存的诚实标记。
+- **环境常量配置**：`cfg-io.ts` 精选 25 参数 + 出生科技旋钮；默认恒 = config_v25.yaml，任何改动 =
   对实验的明示偏离（DESIGN §10.14 披露）；差集经 sessionStorage 传递，读取端钳制 + 忽略未知键
-  （结构参数 nAgents/world/spawnSchedule 固定——模型观测缩放按默认训练）。
+  （结构参数 nAgents/nNorm/world/spawnSchedule 固定——模型观测缩放按默认训练）。
 
 ## 8. UI 接线
 
 - `/solo`：多选对手 → `开始对局` → `/match?op=<逗号分隔 id>`（模型 id + preset id）；缺失/非法参数
   → 重定向 /solo。选中模型在开局时按需 fetch（加载态短提示，新增键）。
 - `/match`：demo bar 移除（CLAUDE.md 备忘既定）；星图标记 = 玩家 known/observed/public 矩阵的视图
-  （认知阶梯五态照旧）；行动格门 = `valid[player]`；状态面板 = 自身标量；日志 = 感知过滤后事件；
-  入侵模态 = 玩家 ∈ invaded；终局覆盖层 = 死亡/存活/未及诞生三态。
+  （认知阶梯照旧 + v2.5：自身被公开白环 `revealed`、入侵者 lethal 红环 `invaderIds`）；行动格门 =
+  `valid[player]`；状态面板 = 自身标量；日志 = 感知过滤后事件；被入侵重选 = 动作格重选模式
+  （玩家 ∈ invaded，DESIGN §10.7）；终局覆盖层 = 死亡/存活/未及诞生三态。
 - 引擎纯客户端运行（单机无后端）；会话状态用 useReducer（事件驱动，React Compiler 友好，
   无 effect 内 setState）。
 - `src/lib/mock.ts` 中仍被原型引用的字段随接线逐步退役；图例/文案不动。
