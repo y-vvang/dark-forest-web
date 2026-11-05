@@ -8,6 +8,8 @@ export const zh: Dict = {
     "site.name": "黑暗森林",
     "nav.back": "返回",
     "nav.home": "首页",
+    "nav.notFound": "#404",
+    "nav.notFound.desc": "404 · 找不到页面",
 
     "home.title": "黑暗森林",
     "home.titleAlt": "DARK FOREST",
@@ -55,7 +57,7 @@ export const zh: Dict = {
     "solo.config.g.gates": "门槛",
     "solo.config.g.reward": "奖励",
     "solo.config.intro": "对局的底层规则：宇宙常量。不懂就别动——默认即实验环境。",
-    "solo.config.g.clock.desc": "世界走多少刻、每刻多久（在线固定 20 秒，这里只改单机）。",
+    "solo.config.g.clock.desc": "世界走多少刻。",
     "solo.config.g.detect.desc": "谁能看见谁：探测概率与被看见的范围。",
     "solo.config.g.econ.desc": "资源从哪来、到哪去：总量预算、出生成本、自然流失。",
     "solo.config.g.tech.desc": "文明成长的速度与上限。",

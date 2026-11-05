@@ -4,6 +4,7 @@
     box-sizing: border-box;
     touch-action: pan-x pan-y;
     user-select: none;
+    overscroll-behavior: chain;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
     -webkit-user-drag: none;
@@ -197,22 +198,11 @@ body {
      whenever the rendered panel still leaks past the viewport. */
 
 .aux-popover {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    width: max-content;
-    max-width: min(20rem, calc(100vw - 1rem));
-    margin: 0;
-}
-
-@supports (anchor-name: --a) and (position-area: block-end) {
-    .aux-popover {
-        position: fixed;
-        inset: auto;
-        margin: 4px;
-        position-area: block-end span-inline-end;
-        position-try-fallbacks: flip-block, flip-inline;
-    }
+    position: fixed;
+    inset: auto;
+    margin: 4px;
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-block, flip-inline;
 }
 
 /* marker detail popovers: markers live inside the chart's overflow-hidden

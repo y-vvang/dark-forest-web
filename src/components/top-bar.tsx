@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { useI18n } from "@/i18n";
@@ -9,7 +10,7 @@ import { useI18n } from "@/i18n";
  */
 export function TopBar({ left, right }: { left?: ReactNode; right?: ReactNode }) {
     return (
-        <header className="flex h-10 shrink-0 items-center justify-between gap-4 border-b border-subtle bg-panel px-4">
+        <header className="sticky top-0 z-9999 flex h-10 shrink-0 items-center justify-between gap-4 border-b border-subtle bg-panel px-4">
             <div className="flex min-w-0 items-center gap-4">{left}</div>
             {right !== undefined && (
                 <div className="tnum flex flex-wrap items-center justify-end gap-x-4 text-base text-dim">
@@ -22,8 +23,9 @@ export function TopBar({ left, right }: { left?: ReactNode; right?: ReactNode })
 
 export function BrandLink() {
     return (
-        <Link href="/" className="text-sm font-bold text-ink">
-            DARK FOREST
+        <Link href="/" className="flex flex-row items-center gap-3">
+            <Image src="/icon.svg" alt="" width={25} height={25} />
+            <div className="text-sm font-bold text-ink">DARK FOREST</div>
         </Link>
     );
 }

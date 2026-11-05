@@ -37,8 +37,8 @@ export function placeFixedPopover(
     pop.style.translate = "";
     const anchorRect = anchor.getBoundingClientRect();
     const popRect = pop.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
 
     let left = anchorRect.left;
     if (left + popRect.width > viewportWidth - VIEWPORT_PAD) {
@@ -78,6 +78,11 @@ export function useAutoPopover(onOpen?: PopoverOnOpen) {
     const popoverRef = useRef<HTMLDivElement>(null);
     const [pinned, setPinned] = useState(false);
 
+    const onOpenRef = useRef(onOpen);
+    useEffect(() => {
+        onOpenRef.current = onOpen;
+    }, [onOpen]);
+
     const isOpen = useCallback(
         () => popoverRef.current?.matches(":popover-open") === true,
         [],
@@ -85,7 +90,9 @@ export function useAutoPopover(onOpen?: PopoverOnOpen) {
 
     const show = useCallback(() => {
         const pop = popoverRef.current;
-        if (pop !== null && !isOpen()) pop.showPopover();
+        if (pop === null || isOpen()) return;
+        onOpenRef.current?.(pop, anchorRef.current);
+        pop.showPopover();
     }, [isOpen]);
 
     const hide = useCallback(() => {
@@ -94,24 +101,17 @@ export function useAutoPopover(onOpen?: PopoverOnOpen) {
     }, [isOpen]);
 
     const togglePinned = useCallback(() => {
-        if (pinned) {
-            hide();
-            setPinned(false);
-        } else {
-            show();
-            setPinned(true);
-        }
+        if (pinned) { hide(); setPinned(false); }
+        else { show(); setPinned(true); }
     }, [hide, pinned, show]);
 
     // sync `pinned` with every close path (Escape, light dismiss, another
-    // popover's auto-close) and hand the panel to `onOpen` on every open.
+    // popover's auto-close).
     useEffect(() => {
         const pop = popoverRef.current;
         if (pop === null) return;
         const onToggle = (event: ToggleEvent) => {
-            if (event.newState === "open") {
-                onOpen?.(pop, anchorRef.current);
-            } else {
+            if (event.newState !== "open") {
                 pop.style.translate = "";
                 pop.style.left = "";
                 pop.style.top = "";
@@ -120,7 +120,7 @@ export function useAutoPopover(onOpen?: PopoverOnOpen) {
         };
         pop.addEventListener("toggle", onToggle);
         return () => pop.removeEventListener("toggle", onToggle);
-    }, [onOpen]);
+    }, []);
 
     const hoverHandlers = {
         onMouseEnter: show,

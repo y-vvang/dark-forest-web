@@ -12,9 +12,11 @@ export const en = {
     "site.name": "DARK FOREST",
     "nav.back": "Back",
     "nav.home": "Home",
+    "nav.notFound": "#404",
+    "nav.notFound.desc": "404 · Page Not Found",
 
     "home.title": "DARK FOREST",
-    "home.titleAlt": "黑暗森林",
+    "home.titleAlt": "From Threebody",
     "home.tagline":
         "You are a civilization, born as another is born. Your only goal: survive to tick 250.",
     "home.rules.title": "Rules at a glance",
@@ -63,7 +65,7 @@ export const en = {
     "solo.config.g.reward": "Rewards",
     "solo.config.intro":
         "The rulebook under the match: universe constants. If unsure, leave them — defaults mirror the experiment.",
-    "solo.config.g.clock.desc": "How long the world runs. Online ticks are fixed at 20s; this affects solo only.",
+    "solo.config.g.clock.desc": "How long the world runs.",
     "solo.config.g.detect.desc": "Who sees whom: detection odds and how far sight reaches.",
     "solo.config.g.econ.desc": "Where resources come from and go: total budget, birth cost, natural drain.",
     "solo.config.g.tech.desc": "How fast civilizations grow, and how far.",

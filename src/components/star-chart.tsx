@@ -62,7 +62,7 @@ export function StarChart({
                     }}
                 />
             )}
-            {civs.map((civ) => (
+            {self !== undefined && civs.map((civ) => (
                 <Marker
                     key={civ.id}
                     civ={cam(civ)}

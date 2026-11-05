@@ -79,7 +79,10 @@ export function EndOverlay({
                     {onAgain !== undefined ? (
                         <button
                             type="button"
-                            onClick={onAgain}
+                            onClick={(e) => {
+                                e.currentTarget.disabled = true;
+                                onAgain();
+                            }}
                             className="rounded-panel bg-self px-3 py-2 text-center text-base font-bold text-panel"
                         >
                             {t(againLabel ?? "online.requeue")}

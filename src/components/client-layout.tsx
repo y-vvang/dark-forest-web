@@ -7,13 +7,21 @@
  * a server component (it owns the English-only metadata, DESIGN.md §12).
  *
  * Global side effects live here so every route loads them exactly once:
- * - @oddbird/popover-polyfill 0.7.2 backfills the native Popover API,
+ * - `@oddbird/popover-polyfill` backfills the native Popover API,
  *   including the auto-state rule that only ONE popover may be open
  *   document-wide, plus Escape and light-dismiss.
+ * - `@oddbird/css-anchor-positioning` backfills the native CSS 
+ *   Anchor Positioning module.
  */
 import "@oddbird/popover-polyfill";
 
 import { I18nProvider } from "@/i18n";
+
+if (typeof window !== "undefined") {
+    if (!("anchorName" in document.documentElement.style)) {
+        import("@oddbird/css-anchor-positioning");
+    }
+}
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
     return <I18nProvider>{children}</I18nProvider>;

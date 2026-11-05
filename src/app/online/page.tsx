@@ -14,7 +14,7 @@ import type { CivLike } from "@/components/marker";
 import { Panel } from "@/components/panel";
 import { StarChart } from "@/components/star-chart";
 import { StatusPanel } from "@/components/status-panel";
-import { BackLink, TopBar } from "@/components/top-bar";
+import { BrandLink, BackLink, TopBar } from "@/components/top-bar";
 import { useI18n } from "@/i18n";
 import { ACTION_NUM } from "@/lib/solo/gates";
 import { safetyNetDelay, useOnlineWorld } from "@/lib/online/use-online-world";
@@ -255,7 +255,7 @@ export default function OnlinePage() {
     return (
         <div className="flex min-h-svh flex-col">
             <TopBar
-                left={<BackLink href="/" />}
+                left={<BrandLink />}
                 right={
                     <>
                         <span>
@@ -307,17 +307,19 @@ export default function OnlinePage() {
                     </div>
                 )}
 
-                <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_540px]">
-                    <div className="mx-auto w-full max-w-[min(720px,calc(100svh-20rem))]">
-                        <StarChart
-                            civs={v.markers}
-                            selectableIds={targeting ? v.targetCandidates : []}
-                            pingIds={[]}
-                            invaderIds={v.invasion !== null ? [v.invasion.invaderId] : []}
-                            onPick={onPick}
-                        />
+                <div className="flex flex-1 flex-col gap-3 lg:flex-row">
+                    <div className="flex-1">
+                        <div className="mx-auto w-2/3">
+                            <StarChart
+                                civs={v.markers}
+                                selectableIds={targeting ? v.targetCandidates : []}
+                                pingIds={[]}
+                                invaderIds={v.invasion !== null ? [v.invasion.invaderId] : []}
+                                onPick={onPick}
+                            />
+                        </div>
                     </div>
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 lg:w-1/2">
                         {v.self !== null ? (
                             <StatusPanel
                                 tech={v.self.tech}
@@ -343,7 +345,7 @@ export default function OnlinePage() {
                                 {t("rechoice.submitted")}
                             </p>
                         )}
-                        {canAct && (
+                        {canAct && s.submission === null && (
                             <p className="text-xs text-faint">
                                 {t("online.autoCommit")}
                                 {session.lastAction !== null ? ` · ${t("online.enterHint")}` : ""}

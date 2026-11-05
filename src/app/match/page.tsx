@@ -175,18 +175,19 @@ function MatchConsole() {
                     </div>
                 )}
 
-                <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_540px]">
-                    <div className="mx-auto w-full max-w-[min(720px,calc(100svh-20rem))]">
-                        <StarChart
-                            civs={v.markers}
-                            selectableIds={targeting ? v.targetCandidates : []}
-                            pingIds={[]}
-                            invaderIds={v.invasion !== null ? [v.invasion.invaderId] : []}
-                            onPick={onPick}
-                        />
+                <div className="flex flex-1 flex-col gap-3 lg:flex-row">
+                    <div className="flex-1">
+                        <div className="mx-auto w-2/3">
+                            <StarChart
+                                civs={v.markers}
+                                selectableIds={targeting ? v.targetCandidates : []}
+                                pingIds={[]}
+                                invaderIds={v.invasion !== null ? [v.invasion.invaderId] : []}
+                                onPick={onPick}
+                            />
+                        </div>
                     </div>
-                    <div className="flex flex-col gap-3">
-                        <AuxButtons reward={v.reward} onAdvise={session.advise} />
+                    <div className="flex flex-col gap-3 lg:w-1/2">
                         {v.self !== null ? (
                             <StatusPanel
                                 tech={v.self.tech}
@@ -202,6 +203,7 @@ function MatchConsole() {
                                 </p>
                             </div>
                         )}
+                        <AuxButtons reward={v.reward} onAdvise={session.advise} />
                         <ActionGrid
                             tech={v.self?.tech ?? 0}
                             res={v.self?.res ?? 0}
