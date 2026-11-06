@@ -309,10 +309,10 @@ export class SoloMatch {
         const env = this.env;
         const result = env.resolve(re);
         this.lastResult = result;
-        this.assignBirths();
 
         // 玩家自身行为结果（感知过滤规则①：行为者知情权）。loot_to 长度守卫（评审
         // I-1）：_grow 扩容刻数组按旧 n 分配——增长槽越界读 undefined → NaN 污染。
+        // playerSlot 取入席前的值：本刻刚出生的玩家未行动（null → 跳过）。
         if (this.playerSlot !== null) {
             for (const ev of result.info.strike_events)
                 if (ev[0] === this.playerSlot && ev[2] === "killed") this.killsByPlayer++;
@@ -326,6 +326,12 @@ export class SoloMatch {
         // v2.5 同刻复用为缺省——玩家死亡的同刻其槽位可能即被复用（alive=1 新住客），
         // alive 判死会漏检 → 游戏不结束、玩家无缝操控新住客。事件流对复用时序免疫
         //（同在线 processDeaths 口径）；同刻复用会在装配前清死因（Q19）→ unknown。
+        //
+        // **判死先于 assignBirths**（走查回归 2026-11-06 "饿死在第 0 刻"）：到达
+        // 出生可能同刻复用刚死的槽位——死亡阶段（4-8）先于出生阶段（10），该槽位
+        // 的 died_this_tick 条目属于前任住客；先入席后判死会使新生玩家吃到前任的
+        // 死亡事件 → 进入即死（ticks 0、资源条显示新生儿资源）。在线侧 driver.ts
+        // 的 settleTick 同序（"先判死后入席"，:314-318）。
         if (this.playerSlot !== null) {
             const died = result.info.died_this_tick.find((d) => d[0] === this.playerSlot);
             if (died !== undefined) {
@@ -340,6 +346,7 @@ export class SoloMatch {
                 return;
             }
         }
+        this.assignBirths();
         if (result.done) {
             this.phase = "ended";
             this.end =

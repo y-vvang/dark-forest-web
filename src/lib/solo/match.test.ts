@@ -267,6 +267,75 @@ test("same-tick recycle of the player's slot must still end the game (died_this_
     expect(end.ticks).toBe(2); // 入席快照：死亡刻 env.t=3 − 入席 t=1（复用覆写免疫）
 });
 
+test("birth via same-tick slot reuse must not consume the previous occupant's death (no tick-0 false death)", () => {
+    // 走查回归（2026-11-06 "饿死在第 0 刻"）：到达出生可能同刻复用刚死的槽位——
+    // 死亡阶段（4-8）先于出生阶段（10），该槽位的 died_this_tick 条目属于**前任
+    // 住客**（复用清死因 → ""，Q19）。判死先于 assignBirths 时新生玩家才会吃到
+    // 前任的死亡条目 → 进入即死（ticks 0、资源条显示新生儿的 U[5,20]）。在线侧
+    // driver.ts 本就"先判死后入席"（:314）——solo 对齐同一顺序。
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, {
+        envRng: baseEnvRng(),
+        presetRng: new ScriptedRng([], 0.3),
+        arrivalRng: new ScriptedRng([0.01], 0), // arrival = 1 + floor(0.01·250) = 3
+    });
+    const tr = new ViewTracker(m);
+    let prepped = false;
+    m.start(() => {
+        // 接缝（tick 1 结算后、tick 2 结算前）：耗尽未生槽 + 饿死 slot1 + 池够——
+        // tick 2 的出生走复用（最小死槽 = slot1），恰为玩家的到达出生
+        if (!prepped && m.env.t === 2) {
+            prepped = true;
+            for (let i = 4; i < 36; i++) {
+                m.env.spawn_tick[i] = 1;
+                m.env.alive[i] = 1;
+                m.env.res[i] = 10; // 伪在场槽不饿死
+            }
+            m.env.res[1] = 0; // slot1 于 tick 2 饿死
+            m.env.free_pool = 20;
+            m.env.pending_spawns[0] = 12.5;
+        }
+    });
+    // 场景自证：玩家 = 复用槽 1 的到达出生；该槽在本刻 died_this_tick 里
+    //（条目 [1,""] 属于前任住客——Q19 复用清死因），新生儿在场且资源有余
+    expect(m.playerSlot).toBe(1);
+    expect(m.lastResult!.info.died_this_tick).toContainEqual([1, ""]);
+    expect(m.env.alive[1]).toBe(1);
+    expect(m.env.res[1]).toBeGreaterThan(0);
+    // 修复目标：假死亡不得发生——游戏继续、终局为空、日志无死亡行
+    expect(m.phase).toBe("awaiting-action");
+    expect(m.getEnd()).toBeNull();
+    const v = tr.update();
+    expect(v.log.some((e) => e.key === "log.death")).toBe(false);
+    expect(v.log.some((e) => e.key === "match.birthSelf")).toBe(true); // 出生照常记录
+});
+
+test("genuine starvation: overlay and log both report starve; res bar reads zero (walkthrough 2026-11-06)", () => {
+    // 用户验收标准：资源耗尽而死时，死亡弹窗与日志行均显示饿死，且资源条实际归零。
+    // （EndView.cause = 弹窗数据源；log.death params.cause = 日志数据源——无同刻
+    // 复用时死因不经 Q19 清除，两端一致。）
+    const m = new Match(7, ["pacifist"], new Map(), V25_CONFIG, {
+        envRng: baseEnvRng(),
+        presetRng: new ScriptedRng([], 0.3),
+        arrivalRng: ARR1(),
+    });
+    const tr = new ViewTracker(m);
+    tr.update(); // 排队态（client.ts 同构装配）
+    m.start(() => tr.update());
+    expect(m.playerSlot).toBe(4);
+    m.env.res[4] = 0; // 接缝：资源耗尽
+    m.submitAction(0, -1); // SILENT——阶段 8 饿死（无复用：出生走未生槽）
+    const v = tr.update();
+    const end = m.getEnd() as Extract<EndView, { kind: "dead" }>;
+    expect(end.kind).toBe("dead");
+    expect(end.cause).toBe("starve"); // 弹窗死因 = 饿死
+    expect(m.env.res[4]).toBe(0); // 资源条归零（尸体结算置 0）
+    expect(v.self!.res).toBe(0); // 视图读数同源归零
+    const death = v.log.find((e) => e.key === "log.death");
+    expect(death).toBeDefined();
+    expect(death!.params!.cause).toBe("cause.starve"); // 日志死因 = 饿死（与弹窗一致）
+    expect(death!.params!.ticks).toBe(end.ticks);
+});
+
 test("arrival: world ends before arrival → unborn ending", () => {
     const m = new Match(7, ["pacifist"], new Map(), { ...V25_CONFIG, tMax: 6 }, {
         envRng: baseEnvRng(),

@@ -3,18 +3,22 @@ import Link from "next/link";
 import { useI18n, type MessageKey } from "@/i18n";
 import type { EndView } from "@/lib/solo/match";
 
-/** 死因四值（end.kind==="dead" 时 cause 已收窄出空串） */
+/** 死因五值（end.kind==="dead" 时 cause 已收窄出空串——"" 由会话层折叠为 "unknown"，
+ *  同刻复用清死因的 Q19 兜底；unknown 须映射自身而非回落饿死——走查回归 2026-11-06） */
 const CAUSE_KEY = {
     starve: "cause.starve",
     strike: "cause.strike",
     invade: "cause.invade",
     mutual: "cause.mutual",
-} as const satisfies Record<"starve" | "strike" | "invade" | "mutual", MessageKey>;
+    unknown: "cause.unknown",
+} as const satisfies Record<"starve" | "strike" | "invade" | "mutual" | "unknown", MessageKey>;
 
 type DeadCause = keyof typeof CAUSE_KEY;
 
 function isDeadCause(c: string): c is DeadCause {
-    return c === "starve" || c === "strike" || c === "invade" || c === "mutual";
+    return (
+        c === "starve" || c === "strike" || c === "invade" || c === "mutual" || c === "unknown"
+    );
 }
 
 /**
@@ -48,7 +52,7 @@ export function EndOverlay({
                         <h2 className="text-xl text-lethal">{t("end.dead.title")}</h2>
                         <p className="tnum mt-2 text-base text-dim">
                             {t("end.dead.cause", {
-                                cause: t(isDeadCause(end.cause) ? CAUSE_KEY[end.cause] : "cause.starve"),
+                                cause: t(isDeadCause(end.cause) ? CAUSE_KEY[end.cause] : "cause.unknown"),
                             })}
                         </p>
                         <p className="tnum text-base text-dim">
